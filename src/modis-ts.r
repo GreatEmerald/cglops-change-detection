@@ -7,7 +7,8 @@ library(strucchange)
 library(doParallel)
 library(tools)
 
-modis_dir = "/mnt/storage/cglops/modis"
+modis_dir = "../../modis"
+vi_dir="evi" # tif for NDVI
 
 PlotRawData = function(filename=file.path(modis_dir, "mod13q1/MOD13Q1.A2018001.h16v07.006.2018017224110.hdf"))
 {
@@ -20,15 +21,15 @@ PlotRawData = function(filename=file.path(modis_dir, "mod13q1/MOD13Q1.A2018001.h
 # This is too slow, use gdalbuildvrt from bash
 MakeTimeBrick = function()
 {
-    timeStackMODIS(file.path(modis_dir, "tif/"), pattern=glob2rx("*.tif"),
+    timeStackMODIS(file.path(modis_dir, vi_dir), pattern=glob2rx("*.tif"),
         filename="userdata/cglops/modis/terra-timeseries-sahara.tif", datatype="INT2S", progress="text",
         options="COMPRESS=DEFLATE")
 }
 
 LoadTimeSeries = function()
 {
-    timeseries = brick(file.path(modis_dir, "tif/timeseries.vrt"))
-    names = scan(file.path(modis_dir, "tif/layernames.txt"), what="character", sep=" ")
+    timeseries = brick(file.path(modis_dir, vi_dir, "timeseries.vrt"))
+    names = scan(file.path(modis_dir, vi_dir, "layernames.txt"), what="character", sep=" ")
     names(timeseries) = names
     timeseries = setZ(timeseries, getMODISinfo(names)$date)
     return(timeseries)
@@ -45,13 +46,37 @@ TestBfast = function()
     # Test
     bfm <- bfmPixel(timeseries, start=c(2009, 1), interactive=TRUE)
     # Display a pixel
-    pixel = as.vector(timeseries[17204058])
+    pixel = as.vector(timeseries[17965527])
     
     bfts = bfastts(pixel, getZ(timeseries), type = "16-day")
     breaks = bfast(bfts, season="harmonic", max.iter=0xffffffff, h=GetBreakNumber(getZ(timeseries))) # Argument is of length zero if max.iter is not given, weird
     # type=RE/ME/Score-{MO,CU}SUM returns a nicer St but does not change Tt
     plot(breaks)
 }
+
+# point of interest visualisation
+
+# poi = data.frame(x=-1314216,y=1356956,desc="Forest changed in 2015")
+# poi = rbind(poi, data.frame(x=-1314517, y=1356999, desc="More forest changed in 2016"))
+# poi = rbind(poi, data.frame(x=-1321912, y=1358368, desc="More forest changed in 2015"))
+# poi = rbind(poi, data.frame(x=-1501671, y=2042743, desc="Desert, late 2016"))
+# poi = rbind(poi, data.frame(x=-1484532, y=1241856, desc="Hansen's forest in 2016"))
+# coordinates(poi) = ~x + y
+# crs(poi) = crs(timeseries)
+# poi_val = extract(timeseries, poi, cellnumbers=TRUE)
+# spplot(timeseries[[400]], sp.layout=list(poi))
+# poi_val[,1]
+# pixel = as.vector(timeseries[20350392])
+## For 20350392
+# pixel[35] = mean(pixel[34], pixel[36])
+# pixel[79] = mean(pixel[78], pixel[80])
+# bfts = bfastts(pixel, dates, type = "16-day")
+# bf = breakpoints(response ~ (harmon + trend), data=bfastpp(bfts, order=3), h=GetBreakNumber(dates))
+# as.integer(dates[max(bf$breakpoints)] - as.Date("2014-03-12"))
+# plot(poi_val[5,-1], type="l")
+# abline(v=284, col="red")
+# breaks = bfast(bfts, season="harmonic", max.iter=2, h=GetBreakNumber(getZ(timeseries)))
+# plot(breaks)
 
 # Function that does bfast analysis on a pixel, returns a bfast
 AnalysePixel = function(pixel)
@@ -148,8 +173,12 @@ GetLastBreakInTile = function(pixel)
         return(NA) # Too many NAs
     
     bfts = bfastts(pixel, dates, type = "16-day")
-    # TODO: See if sctest can be ported for this to make it not waste time on things with no breaks
-    bf = breakpoints(response ~ (harmon + trend), data=bfastpp(bfts, order=3), h=GetBreakNumber(dates))
+    bpp = bfastpp(bfts, order=3)
+    
+    if (sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value > 0.05) # If test says there should be no breaks
+        return(as.integer(dates[1] - as.Date("2014-03-12")))
+    
+    bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
     
     # Direct returns without calling functions
     if (all(is.na(bf$breakpoints)))
@@ -244,7 +273,7 @@ if (exists("set_fast_options"))
 
 timeseries = LoadTimeSeries()
 dates = getZ(timeseries) # This is needed in AnalysePixel
-ForeachCalc(timeseries, GetLastBreakInTile, file.path(modis_dir, "timeseries/breaks.tif"), datatype="INT2S",
+ForeachCalc(timeseries, GetLastBreakInTile, file.path(modis_dir, "evi-breaks/breaks.tif"), datatype="INT2S",
     progress="text", options="COMPRESS=DEFLATE")
 
 BfastBenchmark = function()
@@ -256,7 +285,7 @@ BfastBenchmark = function()
     #           Partial returns "33  56  79 107 130 171 196 286 313 378"
     #           Bp returns "44 103 190"
     # 10971385: breaks at 80, 148, 239, 271, 294, 358
-    p = as.vector(timeseries[23039998])
+    p = as.vector(timeseries[10971385])
     bfts = bfastts(p, dates, type = "16-day")
     
     # full bfast
