@@ -2,11 +2,7 @@
 # to be moved to a subdirectory when a frontend script is made
 
 library(raster)
-library(bfastSpatial)
 library(strucchange)
-library(foreach)
-library(doParallel)
-library(tools)
 library(lubridate)
 
 # Load time series: expects two files, `timeseries.vrt` and `layernames.txt` generated from bash
@@ -20,6 +16,7 @@ LoadTimeSeries = function(input_dir)
     names(timeseries) = names
     
     # Hack: determine type based on the first characters of the first name
+    library(bfastSpatial)
     if (substr(names[1], 1, 3) == "MOD")
     {
         timeseries = setZ(timeseries, getMODISinfo(names)$date)
@@ -78,6 +75,9 @@ GetChunkFilename = function(filename, identifier, length)
 # foreach-based mc.calc
 ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads=12, ...)
 {
+    library(foreach)
+    library(doParallel)
+    library(tools)
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
     BlockSize = ChunkInfo["BlockSize"]
@@ -121,7 +121,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
 }
 
 # SparkR-based mc.calc
-SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads=12, datatype=NULL, options=NULL)
+SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=NULL, options=NULL)
 {
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
@@ -255,6 +255,7 @@ GetLastBreakInTile = function(pixel)
 #dates = getZ(timeseries) # This is needed in GetLastBreakInTile, otherwise data is lost; no way to get around using the environment unless we want to re-read names on each pixel process
 dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
 timeseries = brick("/data/mep_cg1/MOD_S10/additional_VIs/X16Y06/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_EVI.tif")
+setZ(timeseries, dates)
 
 DateRange = range(dates)
 Years = year(DateRange[1]):year(DateRange[2])
