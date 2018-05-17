@@ -14,11 +14,36 @@ plot(na.approx(bfts))
 bpp = bfastpp(bfts, order=2)
 #bpp$ts = bfts
 bfr = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
+bfci = confint(bfr)
 #bft = breakpoints(ts ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
 #modelterms <- terms(formula, data = data)
 #X <- model.matrix(modelterms, data = data)
 #n <- nrow(X)
 #orig.y = eval(attr(terms(formula), "variables")[[2]], data, env)
+
+## Parse breakpoints and breakpoints.confint into yearly layers and associated confint times
+# How many layers(=years) there should be
+DateRange = range(dates)
+Years = year(DateRange[1]):year(DateRange[2])
+OutMatrix = matrix(-1, nrow=length(Years), ncol=3, dimnames=list(Years, c("breakpoint", "confint.neg", "confint.pos")))
+ConfInts = bfci$confint
+BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp))
+BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp)
+OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays
+c(t(OutMatrix))
+
+BreakpointToDateSinceT0 = function(breakpoint_index, bpp)
+{
+    as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
+}
+
+# The date of the breakpoint in decimal years
+BreakpointDate = function(breakpoint_index, bpp)
+{
+    bpp$time[breakpoint_index]
+}
+
+
 
 # Can visualise a bpp
 plot(read.zoo(bpp))

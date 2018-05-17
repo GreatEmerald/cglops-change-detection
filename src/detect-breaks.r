@@ -34,6 +34,13 @@ LoadTimeSeries = function(input_dir)
     return(timeseries)
 }
 
+GetDatesFromDir = function(dir)
+{
+    dirnames = list.dirs(dir, FALSE, FALSE)
+    dates = parse_date_time(grep(glob2rx("????????"), dirnames, value=TRUE), "ymd")
+    return(as.Date(dates))
+}
+
 # Util function: calculate the size of breaks so that the minimum time between them amounts to a year
 GetBreakNumber = function(dates)
 {
@@ -63,9 +70,9 @@ GetChunkSize = function(input_raster, mem_usage=0.9*1024^3, overhead_mult=9)
 }
 
 # Utility function to generate filenames for each chunk
-GetChunkFilename = function(filename, prefix, length)
+GetChunkFilename = function(filename, identifier, length)
 {
-    file.path(dirname(filename), paste0(prefix, "Chunk_", 1:length, "_", basename(filename)))
+    file.path(dirname(filename), paste0("Chunk_", 1:length, "_", identifier, "_", basename(filename)))
 }
 
 # foreach-based mc.calc
@@ -114,7 +121,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
 }
 
 # SparkR-based mc.calc
-SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads=12, ...)
+SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads=12, datatype=NULL, options=NULL)
 {
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
@@ -123,38 +130,75 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads=1
     # Lists of chunk filenames: input and output
     ChunkFilenames = GetChunkFilename(filename, "Input", NumChunks)
     ResultFilenames = GetChunkFilename(filename, "Output", NumChunks)
-    Filenames = data.frame(ChunkFilenames, ResultFilenames)
+    LogFilenames = GetChunkFilename(filename, "Log", NumChunks)
     
-    scalc = function(Filename, BlockSize, NumChunks)
+    # The actual function that SparkR runs: crop and process a block
+    scalc = function(Index)
     {
+        # Set up the log
+        LogFile = LogFilenames[Index]
+        if (!file.exists(LogFile))
+            file.create(LogFile)
+        LogFile = file(LogFile, "a")
+        sink(LogFile, TRUE)
+    
+        # Crop the block
         ChunkStart = 1+BlockSize*(i-1)
         ChunkEnd = BlockSize*i
         ChunkExtent = extent(input_raster, r1=ChunkStart, r2=ChunkEnd)
         
-        if (file.exists(Filename$ChunkFilenames)) # TODO: think of how to iterate over a data.frame
+        library(raster)
+        if (file.exists(ChunkFilenames[Index]))
         {
-            print(paste0("Chunk ", i, "/", NumChunks, ": File ", ChunkFilenames[i], " already exists, reusing"))
+            print(paste0("Chunk ", Index, "/", NumChunks, ": File ", ChunkFilenames[Index], " already exists, reusing"))
             Chunk = brick(ChunkFilenames[i])
         } else {
-            print(paste0("Chunk ", i, "/", NumChunks, ": cropping to ", ChunkFilenames[i]))
+            print(paste0("Chunk ", Index, "/", NumChunks, ": cropping to ", ChunkFilenames[Index]))
             Chunk = crop(input_raster, ChunkExtent, filename=ChunkFilenames[i], progress="text")
-            print(paste0("Chunk ", i, "/", NumChunks, ": cropping complete."))
+            print(paste0("Chunk ", Index, "/", NumChunks, ": cropping complete."))
         }
         setZ(Chunk, getZ(input_raster))
         names(Chunk) = names(input_raster)
         
-        print(paste0("Chunk ", i, "/", NumChunks, ": processing to ", ResultFilenames[i]))
-        ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[i], ...)
-        print(paste0("Chunk ", i, "/", NumChunks, ": processing complete."))
-        print(paste0("unlink(", ChunkFilenames[i], ")"))
-        unlink(ChunkFilenames[i])
+        # Process the block
+        print(paste0("Chunk ", Index, "/", NumChunks, ": processing to ", ResultFilenames[Index]))
+        if (!is.null(datatype))
+        {
+            if (!is.null(options))
+                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index], datatype=datatype, options=options)
+            else
+                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index], datatype=datatype)
+        }
+        else
+        {
+            if (!is.null(options))
+                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index], options=options)
+            else
+                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index])
+        }
+        print(paste0("Chunk ", Index, "/", NumChunks, ": processing complete."))
+        print(paste0("unlink(", ChunkFilenames[Index], ")"))
+        unlink(ChunkFilenames[Index])
         
-        ResultChunk
+        # Stop logging
+        sink()
     }
-    spark.lapply(Filenames, scalc, BlockSize, NumChunks)
+    spark.lapply(1:length(ChunkFilenames), scalc)
     
     b_metrics = gdalUtils::mosaic_rasters(gdalfile=ResultFilenames, dst_dataset=filename,
         output_Raster=TRUE, verbose=TRUE, ot="Int16")
+}
+
+# Utility functions
+BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
+{
+    as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
+}
+
+# The date of the breakpoint in decimal years
+BreakpointDate = function(breakpoint_index, bpp)
+{
+    bpp$time[breakpoint_index]
 }
 
 # Get last break in a pixel time series
@@ -165,20 +209,29 @@ GetLastBreakInTile = function(pixel)
     if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
         return(NA) # Too many NAs
     
-    bfts = bfastts(pixel, dates, type="irregular")
+    bfts = bfastts(pixel, dates, type=TSType)
     bpp = bfastpp(bfts, order=Order)
-    t0 = as.Date("2014-03-16")
     
     if (sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value > 0.05) # If test says there should be no breaks
-        return(as.integer(dates[1] - t0))
+        return(-1)
     
     bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
     
     # Direct returns without calling functions
     if (all(is.na(bf$breakpoints)))
-        return(as.integer(dates[1] - t0))
+        return(-1)
     
-    return(as.integer(as.Date(date_decimal(bpp$time[max(bf$breakpoints)])) - t0))
+    # Make a matrix for the output
+    OutMatrix = matrix(-1, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
+    ConfInts = confint(bf)$confint # Get confidence interval
+    BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
+    if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
+        cat(c("Duplicate breakpoint years!", ConfInts[,"breakpoints"]))
+    BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp, t0) # Convert indices to days sinec t0
+    OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays # Put it into our matrix in the right years
+    return(c(t(OutMatrix))) # Flatten matrix
+    
+    #return(as.integer(as.Date(date_decimal(bpp$time[max(bf$breakpoints)])) - t0))
     
     #print("BF:")
     #print(bf)
@@ -195,12 +248,23 @@ GetLastBreakInTile = function(pixel)
     #    return(GetLastBreak(bf$output[[length(bf$output)]]$bp.Vt))
     #}
     
-    return(bf)
+    #return(bf)
 }
 
-timeseries = LoadTimeSeries("../../landsat78/mosaics-since2013/ndvi")
-dates = getZ(timeseries) # This is needed in GetLastBreakInTile, otherwise data is lost; no way to get around using the environment unless we want to re-read names on each pixel process
+#timeseries = LoadTimeSeries("../../landsat78/mosaics-since2013/ndvi")
+#dates = getZ(timeseries) # This is needed in GetLastBreakInTile, otherwise data is lost; no way to get around using the environment unless we want to re-read names on each pixel process
+dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
+timeseries = brick("/data/mep_cg1/MOD_S10/additional_VIs/X16Y06/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_EVI.tif")
+
+DateRange = range(dates)
+Years = year(DateRange[1]):year(DateRange[2])
+t0 = as.Date("2014-03-16")
+
+TSType = "10-day" # Type of time series
 Order = 3 # Which harmonic order to use
+
 EnableFastBfast()
-ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
-    progress="text", options="COMPRESS=DEFLATE")
+#ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
+#    progress="text", options="COMPRESS=DEFLATE")
+
+SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
