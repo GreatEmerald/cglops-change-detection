@@ -189,7 +189,9 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         # Stop logging
         sink()
     }
+    sparkR.session()
     spark.lapply(1:length(ChunkFilenames), scalc)
+    sparkR.session.stop()
     
     b_metrics = gdalUtils::mosaic_rasters(gdalfile=ResultFilenames, dst_dataset=filename,
         output_Raster=TRUE, verbose=TRUE, ot="Int16")
