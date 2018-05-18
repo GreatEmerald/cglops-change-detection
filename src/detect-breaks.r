@@ -1,6 +1,7 @@
 # R functions for break detection
 # to be moved to a subdirectory when a frontend script is made
 
+library(SparkR)
 # Load from an external package archive for Spark
 .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
 
@@ -107,7 +108,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
             Chunk = crop(input_raster, ChunkExtent, filename=ChunkFilenames[i], progress="text")
             print(paste0("Chunk ", i, "/", NumChunks, ": cropping complete."))
         }
-        setZ(Chunk, getZ(input_raster))
+        Chunk = setZ(Chunk, getZ(input_raster))
         names(Chunk) = names(input_raster)
         
         print(paste0("Chunk ", i, "/", NumChunks, ": processing to ", ResultFilenames[i]))
@@ -161,11 +162,12 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
             Chunk = crop(input_raster, ChunkExtent, filename=ChunkFilenames[i], progress="text")
             print(paste0("Chunk ", Index, "/", NumChunks, ": cropping complete."))
         }
-        setZ(Chunk, getZ(input_raster))
+        Chunk = setZ(Chunk, getZ(input_raster))
         names(Chunk) = names(input_raster)
         
         # Process the block
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing to ", ResultFilenames[Index]))
+        library(strucchange)
         if (!is.null(datatype))
         {
             if (!is.null(options))
@@ -259,7 +261,7 @@ GetLastBreakInTile = function(pixel)
 #dates = getZ(timeseries) # This is needed in GetLastBreakInTile, otherwise data is lost; no way to get around using the environment unless we want to re-read names on each pixel process
 dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
 timeseries = brick("/data/mep_cg1/MOD_S10/additional_VIs/X16Y06/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_EVI.tif")
-setZ(timeseries, dates)
+timeseries = setZ(timeseries, dates)
 
 DateRange = range(dates)
 Years = year(DateRange[1]):year(DateRange[2])
