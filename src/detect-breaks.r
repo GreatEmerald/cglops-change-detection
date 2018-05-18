@@ -147,12 +147,12 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         LogFile = file(LogFile, "a")
         sink(LogFile, TRUE)
     
+        library(raster)
         # Crop the block
         ChunkStart = 1+BlockSize*(Index-1)
         ChunkEnd = BlockSize*Index
         ChunkExtent = extent(input_raster, r1=ChunkStart, r2=ChunkEnd)
         
-        library(raster)
         if (file.exists(ChunkFilenames[Index]))
         {
             print(paste0("Chunk ", Index, "/", NumChunks, ": File ", ChunkFilenames[Index], " already exists, reusing"))
