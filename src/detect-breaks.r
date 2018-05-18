@@ -159,7 +159,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
             Chunk = brick(ChunkFilenames[i])
         } else {
             print(paste0("Chunk ", Index, "/", NumChunks, ": cropping to ", ChunkFilenames[Index]))
-            Chunk = crop(input_raster, ChunkExtent, filename=ChunkFilenames[i], progress="text")
+            Chunk = crop(input_raster, ChunkExtent, filename=ChunkFilenames[Index])
             print(paste0("Chunk ", Index, "/", NumChunks, ": cropping complete."))
         }
         Chunk = setZ(Chunk, getZ(input_raster))
