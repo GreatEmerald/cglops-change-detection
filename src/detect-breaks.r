@@ -2,10 +2,11 @@
 # to be moved to a subdirectory when a frontend script is made
 
 library(SparkR)
+library(rgdal)
+library(raster)
+
 # Load from an external package archive for Spark
 .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
-
-library(raster)
 library(bfast)
 library(strucchange)
 library(lubridate)
