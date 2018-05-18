@@ -1,7 +1,11 @@
 # R functions for break detection
 # to be moved to a subdirectory when a frontend script is made
 
+# Load from an external package archive for Spark
+.libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
+
 library(raster)
+library(bfast)
 library(strucchange)
 library(lubridate)
 
@@ -213,13 +217,13 @@ GetLastBreakInTile = function(pixel)
     bpp = bfastpp(bfts, order=Order)
     
     if (sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value > 0.05) # If test says there should be no breaks
-        return(-1)
+        return(rep(-9999, length(Years)*3))
     
     bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
     
     # Direct returns without calling functions
     if (all(is.na(bf$breakpoints)))
-        return(-1)
+        return(rep(-9999, length(Years)*3))
     
     # Make a matrix for the output
     OutMatrix = matrix(-1, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
@@ -268,4 +272,4 @@ EnableFastBfast()
 #ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
 #    progress="text", options="COMPRESS=DEFLATE")
 
-SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
+SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
