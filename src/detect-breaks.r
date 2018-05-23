@@ -169,6 +169,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         # Process the block
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing to ", ResultFilenames[Index]))
         library(strucchange)
+        library(bfast)
         if (!is.null(datatype))
         {
             if (!is.null(options))
