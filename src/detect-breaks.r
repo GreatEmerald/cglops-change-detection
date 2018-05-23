@@ -171,6 +171,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
         library(strucchange)
         library(bfast)
+        library(lubridate)
         if (!is.null(datatype))
         {
             if (!is.null(options))
