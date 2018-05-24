@@ -201,21 +201,21 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         output_Raster=TRUE, verbose=TRUE, ot="Int16")
 }
 
-# Utility functions
-BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
-{
-    as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
-}
-
-# The date of the breakpoint in decimal years
-BreakpointDate = function(breakpoint_index, bpp)
-{
-    bpp$time[breakpoint_index]
-}
-
 # Get last break in a pixel time series
 GetLastBreakInTile = function(pixel)
 {
+    # Utility functions: here so that the scope is correct for SparkR
+    BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
+    {
+        as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
+    }
+
+    # The date of the breakpoint in decimal years
+    BreakpointDate = function(breakpoint_index, bpp)
+    {
+        bpp$time[breakpoint_index]
+    }
+
     # Check whether we have enough non-NA pixels for running breakpoints.full, without doing preprocessing.
     # The right hand side formula calculates the columns in the bfastpp object.
     if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
