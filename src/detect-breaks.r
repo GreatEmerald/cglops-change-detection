@@ -204,6 +204,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
 # Get last break in a pixel time series
 GetLastBreakInTile = function(pixel)
 {
+    t0 = as.Date("2014-03-16")
     # Utility functions: here so that the scope is correct for SparkR
     BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
     {
@@ -271,7 +272,6 @@ timeseries = setZ(timeseries, dates)
 
 DateRange = range(dates)
 Years = year(DateRange[1]):year(DateRange[2])
-t0 = as.Date("2014-03-16")
 
 TSType = "10-day" # Type of time series
 Order = 3 # Which harmonic order to use
