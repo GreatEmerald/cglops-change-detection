@@ -1,0 +1,12 @@
+{
+"type": "FeatureCollection",
+"name": "POI",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "comment": "Deforested in 2016, Hansen and MODIS EVI agree, Landsat shows up as way earlier" }, "geometry": { "type": "MultiPoint", "coordinates": [ [ -12.672189454650063, 11.227306372316573 ] ] } },
+{ "type": "Feature", "properties": { "comment": "No deforestation in Hansen, but in MODIS + Landsat; probably too new, 2017" }, "geometry": { "type": "MultiPoint", "coordinates": [ [ -12.719124826710779, 11.225404543900112 ] ] } },
+{ "type": "Feature", "properties": { "comment": "Deforestation in Hansen, none in MODIS; perhaps too small area" }, "geometry": { "type": "MultiPoint", "coordinates": [ [ -12.68457204435493, 11.180830440389345 ] ] } },
+{ "type": "Feature", "properties": { "comment": "Mixed MODIS pixel, Hansen and MODIS disagree on the date of deforestation" }, "geometry": { "type": "MultiPoint", "coordinates": [ [ -12.922360929713451, 11.111413703188573 ] ] } },
+{ "type": "Feature", "properties": { "comment": "Deforestation in Hansen, none in MODIS; probably mixed pixel" }, "geometry": { "type": "MultiPoint", "coordinates": [ [ -12.777584447949339, 10.992787155711925 ] ] } }
+]
+}

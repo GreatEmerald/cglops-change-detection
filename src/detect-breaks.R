@@ -47,7 +47,12 @@ GetDatesFromDir = function(dir)
 # Util function: calculate the size of breaks so that the minimum time between them amounts to a year
 GetBreakNumber = function(dates)
 {
-    1/(as.numeric(difftime(max(dates), min(dates), units="weeks"))/52.25)
+    1/((as.numeric(difftime(max(dates), min(dates), units="weeks")))/52.18)
+}
+
+GetBreakNumberWhole = function(bfts)
+{
+    return(frequency(bfts))
 }
 
 # Util function: if available, enable the use of a faster BFAST
@@ -57,6 +62,8 @@ EnableFastBfast = function()
     {
         print("Using fast BFAST")
         set_fast_options()
+        # Disable bfastts modifications due to issue #2
+        options(bfast.use_bfastts_modifications=FALSE)
     } else print("Using reference BFAST, install appelmar/bfast for a speed increase")
 }
 
@@ -148,6 +155,13 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         LogFile = file(LogFile, "a")
         sink(LogFile, TRUE)
     
+        if (file.exists(ResultFilenames[Index]))
+        {
+            cat(c("Output file ", ResultFilenames[Index], " exists, not recalculating. Delete the file to recalculate."))
+            sink()
+            return()
+        }
+            
         library(raster)
         # Crop the block
         ChunkStart = 1+BlockSize*(Index-1)
@@ -172,6 +186,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         library(strucchange)
         library(bfast)
         library(lubridate)
+        EnableFastBfast()
         if (!is.null(datatype))
         {
             if (!is.null(options))
@@ -193,6 +208,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         # Stop logging
         sink()
     }
+    
     sparkR.session()
     spark.lapply(1:length(ChunkFilenames), scalc)
     sparkR.session.stop()
@@ -208,7 +224,9 @@ GetLastBreakInTile = function(pixel)
     # Utility functions: here so that the scope is correct for SparkR
     BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
     {
-        as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
+        #if (!is.integer(breakpoint_index))
+        #    return(NA)
+        return(as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0))
     }
 
     # The date of the breakpoint in decimal years
@@ -219,16 +237,21 @@ GetLastBreakInTile = function(pixel)
 
     # Check whether we have enough non-NA pixels for running breakpoints.full, without doing preprocessing.
     # The right hand side formula calculates the columns in the bfastpp object.
-    if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
-        return(NA) # Too many NAs
+    #if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
+    #    return(rep(NA, length(Years)*3)) # Too many NAs
     
     bfts = bfastts(pixel, dates, type=TSType)
+    
+    # Use integers
+    if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || sum(!is.na(pixel)) <= GetBreakNumberWhole(bfts))
+        return(rep(NA, length(Years)*3)) # Too many NAs
+    
     bpp = bfastpp(bfts, order=Order)
     
     if (sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value > 0.05) # If test says there should be no breaks
         return(rep(-9999, length(Years)*3))
     
-    bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
+    bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts))
     
     # Direct returns without calling functions
     if (all(is.na(bf$breakpoints)))
@@ -239,9 +262,17 @@ GetLastBreakInTile = function(pixel)
     ConfInts = confint(bf)$confint # Get confidence interval
     BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
     if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
-        cat(c("Duplicate breakpoint years!", ConfInts[,"breakpoints"]))
-    BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp, t0) # Convert indices to days sinec t0
-    OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays # Put it into our matrix in the right years
+        cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp), "Breakpoints:", ConfInts[,"breakpoints"], "\n"))
+    BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp, t0) # Convert indices to days since t0
+    if (is.list(BreakpointDays))
+    {
+        cat(c("Warning: BreakpointDays is a list!\n"))
+        cat(c(unlist(BreakpointDays), "\n"))
+        cat(c(str(BreakpointDays), "\n"))
+        BreakpointDays = unlist(BreakpointDays)
+    }
+    #OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays
+    OutMatrix[as.character(BreakpointYears),] = BreakpointDays # Put it into our matrix in the right years
     return(c(t(OutMatrix))) # Flatten matrix
     
     #return(as.integer(as.Date(date_decimal(bpp$time[max(bf$breakpoints)])) - t0))
@@ -280,4 +311,6 @@ EnableFastBfast()
 #ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
 #    progress="text", options="COMPRESS=DEFLATE")
 
-SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
+#SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
+
+SparkCalc(timeseries, GetLastBreakInTile, "../../tmp/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")

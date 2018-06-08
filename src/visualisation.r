@@ -3,17 +3,17 @@
 
 # Get POI
 library(sf)
-POI = st_read("../../POI.geojson")
+POI = st_read("../data/POI.geojson")
 POI = st_transform(POI, crs(timeseries)@projargs)
 spPOI = as(POI, "Spatial")
 poi_val = extract(timeseries, as(spPOI, "SpatialPoints"), cellnumbers=TRUE)
 plot(POI)
 poi_val[,1] # Cell numbers; not used and somehow seem to be in reverse?!
-bfts = bfastts(poi_val[1,-1], dates, type = "irregular")
+bfts = bfastts(poi_val[1,-1], dates, type = "10-day")
 plot(na.approx(bfts))
 bpp = bfastpp(bfts, order=2)
 #bpp$ts = bfts
-bfr = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
+bfr = breakpoints(response ~ (harmon + trend), data=bpp, h=36)
 bfci = confint(bfr)
 #bft = breakpoints(ts ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
 #modelterms <- terms(formula, data = data)
