@@ -154,15 +154,17 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
             file.create(LogFile)
         LogFile = file(LogFile, "a")
         sink(LogFile, TRUE)
+        sink(LogFile, TRUE, "message") # This sinks stderr: potentially dangerous!
     
         if (file.exists(ResultFilenames[Index]))
         {
             cat(c("Output file ", ResultFilenames[Index], " exists, not recalculating. Delete the file to recalculate."))
+            sink(type="message")
             sink()
             return()
         }
             
-        library(raster)
+        library(raster, quietly=TRUE)
         # Crop the block
         ChunkStart = 1+BlockSize*(Index-1)
         ChunkEnd = BlockSize*Index
@@ -183,9 +185,9 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         # Process the block
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing to ", ResultFilenames[Index]))
         .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
-        library(strucchange)
-        library(bfast)
-        library(lubridate)
+        library(strucchange, quietly=TRUE)
+        library(bfast, quietly=TRUE)
+        library(lubridate, quietly=TRUE)
         EnableFastBfast()
         if (!is.null(datatype))
         {
@@ -206,12 +208,13 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         unlink(ChunkFilenames[Index])
         
         # Stop logging
+        sink(type="message")
         sink()
     }
     
+    FileIndices = which(sapply(ChunkFilenames, file.exists))
     sparkR.session()
-    spark.lapply(1:length(ChunkFilenames), scalc)
-    #spark.lapply(132, scalc)
+    spark.lapply(FileIndices, scalc)
     sparkR.session.stop()
     
     b_metrics = gdalUtils::mosaic_rasters(gdalfile=ResultFilenames, dst_dataset=filename,
@@ -222,18 +225,20 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
 GetLastBreakInTile = function(pixel)
 {
     t0 = as.Date("2014-03-16")
+    NoBreakValue = -9999
     # Utility functions: here so that the scope is correct for SparkR
     BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
     {
         result = as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
-        if (is.numeric(result) && !is.nan(result) &&
+        tryCatch(if (is.numeric(result) && !is.nan(result) &&
             (result < as.integer(min(dates) - t0) || result > as.integer(max(dates) - t0)))
         {
             cat("Warning: breakpoint date out of valid range!\n") # -1900 to 1376
             cat(c("Note: breakpoint index: ", breakpoint_index ,"\n"))
             cat(c("Note: calculated days since t0: ", result ,"\n"))
             cat(c("Note: breakpoint date: ", BreakpointDate(breakpoint_index, bpp) ,"\n"))
-        }
+        }, error=function(e){cat(c("Error: BreakpointToDateSinceT0 result is unhandleable, class: ",
+                                   class(result), "\n"))})
         return(result)
     }
 
@@ -249,6 +254,17 @@ GetLastBreakInTile = function(pixel)
         }
         return(bpp$time[breakpoint_index])
     }
+    
+    # Utility: In case we can't calculate anything, return NA values for all years.
+    ReturnNAs = function()
+    {
+        rep(NA, length(Years)*3)
+    }
+    # Same but if there is no break
+    ReturnNoBreak = function()
+    {
+        rep(NoBreakValue, length(Years)*3)
+    }
 
     # Check whether we have enough non-NA pixels for running breakpoints.full, without doing preprocessing.
     # The right hand side formula calculates the columns in the bfastpp object.
@@ -259,21 +275,22 @@ GetLastBreakInTile = function(pixel)
     
     # Use integers
     if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || GetBreakNumberWhole(bfts) > floor(sum(!is.na(pixel))/2))
-        return(rep(NA, length(Years)*3)) # Too many NAs
+        return(ReturnNAs()) # Too many NAs
     
     bpp = bfastpp(bfts, order=Order)
     
     if (sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value > 0.05) # If test says there should be no breaks
-        return(rep(-9999, length(Years)*3))
+        return(ReturnNoBreak())
     
-    bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts))
+    bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
+                  error = ReturnNAs)
     
     # Direct returns without calling functions
     if (all(is.na(bf$breakpoints)))
-        return(rep(-9999, length(Years)*3))
+        return(ReturnNoBreak())
     
     # Make a matrix for the output
-    OutMatrix = matrix(-9999, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
+    OutMatrix = matrix(NoBreakValue, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
     ConfInts = confint(bf)$confint # Get confidence interval
     BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
     if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
