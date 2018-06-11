@@ -225,19 +225,29 @@ GetLastBreakInTile = function(pixel)
     # Utility functions: here so that the scope is correct for SparkR
     BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
     {
-        return(as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0))
+        result = as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
+        if (is.numeric(result) && !is.nan(result) &&
+            (result < as.integer(min(dates) - t0) || result > as.integer(max(dates) - t0)))
+        {
+            cat("Warning: breakpoint date out of valid range!\n") # -1900 to 1376
+            cat(c("Note: breakpoint index: ", breakpoint_index ,"\n"))
+            cat(c("Note: calculated days since t0: ", result ,"\n"))
+            cat(c("Note: breakpoint date: ", BreakpointDate(breakpoint_index, bpp) ,"\n"))
+        }
+        return(result)
     }
 
     # The date of the breakpoint in decimal years
     BreakpointDate = function(breakpoint_index, bpp)
     {
-        if (!is.numeric(breakpoint_index) || length(breakpoint_index) > 1 || breakpoint_index <= 0)
+        if (length(breakpoint_index) > 1 || !is.numeric(breakpoint_index) || is.nan(breakpoint_index) ||
+            breakpoint_index <= 0 || breakpoint_index > nrow(bpp))
         {
-            cat("Warning: asked to calculate date for a breakpoint index that is not a single positive number!\n")
+            cat("Warning: asked to calculate date for an invalid breakpoint index!\n")
             cat(c("Note: The index was:", breakpoint_index, "\n"))
             return(NA)
         }
-        bpp$time[breakpoint_index]
+        return(bpp$time[breakpoint_index])
     }
 
     # Check whether we have enough non-NA pixels for running breakpoints.full, without doing preprocessing.
@@ -263,7 +273,7 @@ GetLastBreakInTile = function(pixel)
         return(rep(-9999, length(Years)*3))
     
     # Make a matrix for the output
-    OutMatrix = matrix(-1, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
+    OutMatrix = matrix(-9999, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
     ConfInts = confint(bf)$confint # Get confidence interval
     BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
     if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
