@@ -156,15 +156,16 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         sink(LogFile, TRUE)
         sink(LogFile, TRUE, "message") # This sinks stderr: potentially dangerous!
     
-        if (file.exists(ResultFilenames[Index]))
-        {
-            cat(c("Output file ", ResultFilenames[Index], " exists, not recalculating. Delete the file to recalculate."))
-            sink(type="message")
-            sink()
-            return()
-        }
+        # Disable file checks, because we now check it outside the loop
+        # if (file.exists(ResultFilenames[Index]))
+        # {
+        #     cat(c("Output file ", ResultFilenames[Index], " exists, not recalculating. Delete the file to recalculate."))
+        #     sink(type="message")
+        #     sink()
+        #     return()
+        # }
             
-        library(raster, quietly=TRUE)
+        suppressPackageStartupMessages(library(raster, quietly=TRUE))
         # Crop the block
         ChunkStart = 1+BlockSize*(Index-1)
         ChunkEnd = BlockSize*Index
@@ -185,9 +186,9 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         # Process the block
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing to ", ResultFilenames[Index]))
         .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
-        library(strucchange, quietly=TRUE)
-        library(bfast, quietly=TRUE)
-        library(lubridate, quietly=TRUE)
+        suppressPackageStartupMessages(library(strucchange, quietly=TRUE))
+        suppressPackageStartupMessages(library(bfast, quietly=TRUE))
+        suppressPackageStartupMessages(library(lubridate, quietly=TRUE))
         EnableFastBfast()
         if (!is.null(datatype))
         {
@@ -212,6 +213,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         sink()
     }
     
+    # Check which files don't exist and process only those chunks, so that the cluster doesn't need to spawn a VM for doing nothing
     FileIndices = which(sapply(ChunkFilenames, file.exists))
     sparkR.session()
     spark.lapply(FileIndices, scalc)
@@ -238,7 +240,7 @@ GetLastBreakInTile = function(pixel)
             cat(c("Note: calculated days since t0: ", result ,"\n"))
             cat(c("Note: breakpoint date: ", BreakpointDate(breakpoint_index, bpp) ,"\n"))
         }, error=function(e){cat(c("Error: BreakpointToDateSinceT0 result is unhandleable, class: ",
-                                   class(result), "\n"))})
+                                   class(result), " value: ", result, "\n"))})
         return(result)
     }
 
@@ -256,7 +258,7 @@ GetLastBreakInTile = function(pixel)
     }
     
     # Utility: In case we can't calculate anything, return NA values for all years.
-    ReturnNAs = function()
+    ReturnNAs = function(e=NULL) # e is unused, but needs to be there for use in tryCatch
     {
         rep(NA, length(Years)*3)
     }
