@@ -258,7 +258,7 @@ GetLastBreakInTile = function(pixel)
     }
     
     # Utility: In case we can't calculate anything, return NA values for all years.
-    ReturnNAs = function(e=NULL) # e is unused, but needs to be there for use in tryCatch
+    ReturnNAs = function()
     {
         rep(NA, length(Years)*3)
     }
@@ -285,7 +285,13 @@ GetLastBreakInTile = function(pixel)
         return(ReturnNoBreak())
     
     bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
-                  error = ReturnNAs)
+                  error = function(e){return(NULL)})
+    
+    if (is.null(bf))
+    {
+        cat("Warning: failed to run breakpoints, returning NA!\n")
+        return(ReturnNAs())
+    }
     
     # Direct returns without calling functions
     if (all(is.na(bf$breakpoints)))
