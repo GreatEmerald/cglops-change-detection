@@ -82,7 +82,7 @@ GetChunkSize = function(input_raster, mem_usage=0.9*1024^3, overhead_mult=9)
 # Utility function to generate filenames for each chunk
 GetChunkFilename = function(filename, identifier, length)
 {
-    file.path(dirname(filename), paste0("Chunk_", 1:length, "_", identifier, "_", basename(filename)))
+    file.path(dirname(filename), paste0(identifier, "_Chunk_", 1:length , "_", basename(filename)))
 }
 
 # foreach-based mc.calc
@@ -211,6 +211,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
     
     sparkR.session()
     spark.lapply(1:length(ChunkFilenames), scalc)
+    #spark.lapply(132, scalc)
     sparkR.session.stop()
     
     b_metrics = gdalUtils::mosaic_rasters(gdalfile=ResultFilenames, dst_dataset=filename,
@@ -224,14 +225,18 @@ GetLastBreakInTile = function(pixel)
     # Utility functions: here so that the scope is correct for SparkR
     BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
     {
-        #if (!is.integer(breakpoint_index))
-        #    return(NA)
         return(as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0))
     }
 
     # The date of the breakpoint in decimal years
     BreakpointDate = function(breakpoint_index, bpp)
     {
+        if (!is.numeric(breakpoint_index) || length(breakpoint_index) > 1 || breakpoint_index <= 0)
+        {
+            cat("Warning: asked to calculate date for a breakpoint index that is not a single positive number!\n")
+            cat(c("Note: The index was:", breakpoint_index, "\n"))
+            return(NA)
+        }
         bpp$time[breakpoint_index]
     }
 
@@ -243,7 +248,7 @@ GetLastBreakInTile = function(pixel)
     bfts = bfastts(pixel, dates, type=TSType)
     
     # Use integers
-    if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || sum(!is.na(pixel)) <= GetBreakNumberWhole(bfts))
+    if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || GetBreakNumberWhole(bfts) > floor(sum(!is.na(pixel))/2))
         return(rep(NA, length(Years)*3)) # Too many NAs
     
     bpp = bfastpp(bfts, order=Order)
@@ -263,13 +268,15 @@ GetLastBreakInTile = function(pixel)
     BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
     if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
         cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp), "Breakpoints:", ConfInts[,"breakpoints"], "\n"))
+    #cat(c("Debug: ConfInts: ", ConfInts, "\n"))
     BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp, t0) # Convert indices to days since t0
     if (is.list(BreakpointDays))
     {
-        cat(c("Warning: BreakpointDays is a list!\n"))
+        cat("Warning: BreakpointDays is a list!\n")
         cat(c(unlist(BreakpointDays), "\n"))
         cat(c(str(BreakpointDays), "\n"))
         BreakpointDays = unlist(BreakpointDays)
+        cat(c("Note: BreakpointYears:", BreakpointYears))
     }
     #OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays
     OutMatrix[as.character(BreakpointYears),] = BreakpointDays # Put it into our matrix in the right years
@@ -311,6 +318,6 @@ EnableFastBfast()
 #ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
 #    progress="text", options="COMPRESS=DEFLATE")
 
-#SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
+SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
 
-SparkCalc(timeseries, GetLastBreakInTile, "../../tmp/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
+#SparkCalc(timeseries, GetLastBreakInTile, "../../tmp/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
