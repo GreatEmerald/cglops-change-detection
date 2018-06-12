@@ -291,7 +291,7 @@ GetLastBreakInTile = function(pixel)
         return(ReturnNoBreak())
     
     bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
-                  error = function(e){print(e); return(NULL)})
+                  error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", pixel, "\n")); return(NULL)})
     
     if (is.null(bf))
     {
