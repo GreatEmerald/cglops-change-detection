@@ -164,6 +164,12 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         #     sink()
         #     return()
         # }
+        
+        # Set global vars on each worker
+        t0 = as.Date("2014-03-16")
+        NoBreakValue = -9999
+        MinBreakpointValue = as.integer(min(dates) - t0)
+        MaxBreakpointValue = as.integer(max(dates) - t0)
             
         suppressPackageStartupMessages(library(raster, quietly=TRUE))
         # Crop the block
@@ -226,29 +232,29 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
 # Get last break in a pixel time series
 GetLastBreakInTile = function(pixel)
 {
-    t0 = as.Date("2014-03-16")
-    NoBreakValue = -9999
     # Utility functions: here so that the scope is correct for SparkR
     BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
     {
         result = as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
-        tryCatch(if (is.numeric(result) && !is.nan(result) &&
-            (result < as.integer(min(dates) - t0) || result > as.integer(max(dates) - t0)))
+        #tryCatch(
+        if (is.numeric(result) && !is.na(result) && !is.nan(result) &&
+            (result < MinBreakpointValue || result > MaxBreakpointValue))
         {
             cat("Warning: breakpoint date out of valid range!\n") # -1900 to 1376
             cat(c("Note: breakpoint index: ", breakpoint_index ,"\n"))
             cat(c("Note: calculated days since t0: ", result ,"\n"))
             cat(c("Note: breakpoint date: ", BreakpointDate(breakpoint_index, bpp) ,"\n"))
-        }, error=function(e){cat(c("Error: BreakpointToDateSinceT0 result is unhandleable, class: ",
-                                   class(result), " value: ", result, "\n"))})
+        }
+        #, error=function(e){cat(c("Error: BreakpointToDateSinceT0 result is unhandleable, class: ",
+        #                           class(result), " value: ", result, "\n"))})
         return(result)
     }
 
     # The date of the breakpoint in decimal years
     BreakpointDate = function(breakpoint_index, bpp)
     {
-        if (length(breakpoint_index) > 1 || !is.numeric(breakpoint_index) || is.nan(breakpoint_index) ||
-            breakpoint_index <= 0 || breakpoint_index > nrow(bpp))
+        if (!is.numeric(breakpoint_index) || is.nan(breakpoint_index) || is.na(breakpoint_index) ||
+             length(breakpoint_index) > 1 || breakpoint_index <= 0 || breakpoint_index > nrow(bpp))
         {
             cat("Warning: asked to calculate date for an invalid breakpoint index!\n")
             cat(c("Note: The index was:", breakpoint_index, "\n"))
@@ -285,7 +291,7 @@ GetLastBreakInTile = function(pixel)
         return(ReturnNoBreak())
     
     bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
-                  error = function(e){return(NULL)})
+                  error = function(e){print(e); return(NULL)})
     
     if (is.null(bf))
     {
@@ -305,14 +311,15 @@ GetLastBreakInTile = function(pixel)
         cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp), "Breakpoints:", ConfInts[,"breakpoints"], "\n"))
     #cat(c("Debug: ConfInts: ", ConfInts, "\n"))
     BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp, t0) # Convert indices to days since t0
-    if (is.list(BreakpointDays))
-    {
-        cat("Warning: BreakpointDays is a list!\n")
-        cat(c(unlist(BreakpointDays), "\n"))
-        cat(c(str(BreakpointDays), "\n"))
-        BreakpointDays = unlist(BreakpointDays)
-        cat(c("Note: BreakpointYears:", BreakpointYears))
-    }
+    # The below is now handled inside the BreakpointToDateSinceT0 function
+    # if (is.list(BreakpointDays))
+    # {
+    #     cat("Warning: BreakpointDays is a list!\n")
+    #     cat(c(unlist(BreakpointDays), "\n"))
+    #     cat(c(str(BreakpointDays), "\n"))
+    #     BreakpointDays = unlist(BreakpointDays)
+    #     cat(c("Note: BreakpointYears:", BreakpointYears))
+    # }
     #OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays
     OutMatrix[as.character(BreakpointYears),] = BreakpointDays # Put it into our matrix in the right years
     return(c(t(OutMatrix))) # Flatten matrix
