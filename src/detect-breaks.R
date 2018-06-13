@@ -215,6 +215,14 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
     
     # Check which files don't exist and process only those chunks, so that the cluster doesn't need to spawn a VM for doing nothing
     FileIndices = which(sapply(ChunkFilenames, file.exists))
+    
+    # Workaround for a timeout bug in SparkR 1.4-2.0, fixed in 2.1
+    connectBackend.orig <- getFromNamespace('connectBackend', pos='package:SparkR')
+    connectBackend.patched <- function(hostname, port, timeout = 3600*48) {
+        connectBackend.orig(hostname, port, timeout)
+    }
+    assignInNamespace("connectBackend", value=connectBackend.patched, pos='package:SparkR')
+    
     sparkR.session()
     spark.lapply(FileIndices, scalc)
     sparkR.session.stop()
