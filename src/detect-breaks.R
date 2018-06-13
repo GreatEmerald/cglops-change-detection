@@ -164,12 +164,6 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         #     sink()
         #     return()
         # }
-        
-        # Set global vars on each worker
-        t0 = as.Date("2014-03-16")
-        NoBreakValue = -9999
-        MinBreakpointValue = as.integer(min(dates) - t0)
-        MaxBreakpointValue = as.integer(max(dates) - t0)
             
         suppressPackageStartupMessages(library(raster, quietly=TRUE))
         # Crop the block
@@ -232,13 +226,16 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
 # Get last break in a pixel time series
 GetLastBreakInTile = function(pixel)
 {
+    t0 = as.Date("2014-03-16")
+    NoBreakValue = -9999
+    
     # Utility functions: here so that the scope is correct for SparkR
     BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0)
     {
         result = as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0)
         #tryCatch(
         if (is.numeric(result) && !is.na(result) && !is.nan(result) &&
-            (result < MinBreakpointValue || result > MaxBreakpointValue))
+            (result < as.integer(min(dates) - t0) || result > as.integer(max(dates) - t0)))
         {
             cat("Warning: breakpoint date out of valid range!\n") # -1900 to 1376
             cat(c("Note: breakpoint index: ", breakpoint_index ,"\n"))
@@ -282,7 +279,7 @@ GetLastBreakInTile = function(pixel)
     bfts = bfastts(pixel, dates, type=TSType)
     
     # Use integers
-    if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || GetBreakNumberWhole(bfts) > floor(sum(!is.na(pixel))/2))
+    if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || GetBreakNumberWhole(bfts) >= floor(sum(!is.na(pixel))/2))
         return(ReturnNAs()) # Too many NAs
     
     bpp = bfastpp(bfts, order=Order)
