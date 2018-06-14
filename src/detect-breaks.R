@@ -144,6 +144,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
     ChunkFilenames = GetChunkFilename(filename, "Input", NumChunks)
     ResultFilenames = GetChunkFilename(filename, "Output", NumChunks)
     LogFilenames = GetChunkFilename(filename, "Log", NumChunks)
+    TempResultFilenames = GetChunkFilename(file.path("tmp", basename(filename)), "Output", NumChunks)
     
     # The actual function that SparkR runs: crop and process a block
     scalc = function(Index)
@@ -164,8 +165,14 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         #     sink()
         #     return()
         # }
-            
+        
+        # Set up raster options    
         suppressPackageStartupMessages(library(raster, quietly=TRUE))
+        if (!dir.exists("tmp"))
+            dir.create("tmp")
+        rasterOptions(tmpdir="tmp", chunksize=0.9*1024^3)
+        
+        
         # Crop the block
         ChunkStart = 1+BlockSize*(Index-1)
         ChunkEnd = BlockSize*Index
@@ -193,18 +200,20 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         if (!is.null(datatype))
         {
             if (!is.null(options))
-                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index], datatype=datatype, options=options)
+                ResultChunk = calc(x=Chunk, fun=fx, filename=TempResultFilenames[Index], datatype=datatype, options=options)
             else
-                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index], datatype=datatype)
+                ResultChunk = calc(x=Chunk, fun=fx, filename=TempResultFilenames[Index], datatype=datatype)
         }
         else
         {
             if (!is.null(options))
-                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index], options=options)
+                ResultChunk = calc(x=Chunk, fun=fx, filename=TempResultFilenames[Index], options=options)
             else
-                ResultChunk = calc(x=Chunk, fun=fx, filename=ResultFilenames[Index])
+                ResultChunk = calc(x=Chunk, fun=fx, filename=TempResultFilenames[Index])
         }
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing complete."))
+        cat(c("Moving file ", TempResultFilenames[Index], " to ", ResultFilenames[Index], "\n"))
+        file.rename(TempResultFilenames[Index], ResultFilenames[Index])
         print(paste0("unlink(", ChunkFilenames[Index], ")"))
         unlink(ChunkFilenames[Index])
         
