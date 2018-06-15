@@ -134,7 +134,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
 }
 
 # SparkR-based mc.calc
-SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=NULL, options=NULL)
+SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=NULL, options=NULL)
 {
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
@@ -167,6 +167,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         # }
         
         # Set up raster options    
+        options(warn=1)
         suppressPackageStartupMessages(library(raster, quietly=TRUE))
         if (!dir.exists("tmp"))
             dir.create("tmp")
@@ -213,7 +214,9 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
         }
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing complete."))
         cat(c("Moving file ", TempResultFilenames[Index], " to ", ResultFilenames[Index], "\n"))
-        file.rename(TempResultFilenames[Index], ResultFilenames[Index])
+        file.copy(TempResultFilenames[Index], ResultFilenames[Index])
+        cat(c("Cleaning up ", TempResultFilenames[Index], "\n"))
+        file.remove(TempResultFilenames[Index])
         print(paste0("unlink(", ChunkFilenames[Index], ")"))
         unlink(ChunkFilenames[Index])
         
@@ -223,7 +226,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, datatype=
     }
     
     # Check which files don't exist and process only those chunks, so that the cluster doesn't need to spawn a VM for doing nothing
-    FileIndices = which(sapply(ChunkFilenames, file.exists))
+    FileIndices = which(!sapply(ResultFilenames, file.exists))
     
     # Workaround for a timeout bug in SparkR 1.4-2.0, fixed in 2.1
     connectBackend.orig <- getFromNamespace('connectBackend', pos='package:SparkR')
