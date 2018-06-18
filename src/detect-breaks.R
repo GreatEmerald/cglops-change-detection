@@ -198,6 +198,9 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
         suppressPackageStartupMessages(library(bfast, quietly=TRUE))
         suppressPackageStartupMessages(library(lubridate, quietly=TRUE))
         EnableFastBfast()
+        # Unclean tmp dir: make sure to remove in order to not need to overwrite
+        if (file.exists(TempResultFilenames[Index]))
+            file.remove(TempResultFilenames[Index])
         if (!is.null(datatype))
         {
             if (!is.null(options))
@@ -363,8 +366,10 @@ GetLastBreakInTile = function(pixel)
 
 #timeseries = LoadTimeSeries("../../landsat78/mosaics-since2013/ndvi")
 #dates = getZ(timeseries) # This is needed in GetLastBreakInTile, otherwise data is lost; no way to get around using the environment unless we want to re-read names on each pixel process
+tile = "X16Y06"
+Vindex = "NDMI"
 dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
-timeseries = brick("/data/mep_cg1/MOD_S10/additional_VIs/X16Y06/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_EVI.tif")
+timeseries = brick(paste0("/data/mep_cg1/MOD_S10/additional_VIs/", tile, "/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_", Vindex, ".tif"))
 timeseries = setZ(timeseries, dates)
 
 DateRange = range(dates)
@@ -377,6 +382,6 @@ EnableFastBfast()
 #ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
 #    progress="text", options="COMPRESS=DEFLATE")
 
-SparkCalc(timeseries, GetLastBreakInTile, "/data/users/Public/greatemerald/modis/breaks/evi/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
+SparkCalc(timeseries, GetLastBreakInTile, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, tile, "breaks-order3.tif"), datatype="INT2S", options="COMPRESS=DEFLATE")
 
 #SparkCalc(timeseries, GetLastBreakInTile, "../../tmp/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
