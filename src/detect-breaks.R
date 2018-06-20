@@ -1,3 +1,4 @@
+#!/usr/bin/env RScript
 # R functions for break detection
 # to be moved to a subdirectory when a frontend script is made
 
@@ -10,6 +11,18 @@ library(raster)
 library(bfast)
 library(strucchange)
 library(lubridate)
+library(optparse)
+
+# Parse command line options
+parser = OptionParser()
+parser = add_option(parser, c("-t", "--tile"), type="character", default="X16Y06",
+                    help="Proba-V tile to process. (Default: %default)", metavar="tile")
+parser = add_option(parser, c("-v", "--vegetation-index"), type="character", default="NDMI",
+                    help="Vegetation index to process. Case sensitive to input files. (Default: %default)", metavar="VI")
+parser = add_option(parser, c("-i", "--input-brick"), type="character",
+                    help="Input brick file of MODIS vegetation index time series.", metavar="file")
+
+args = parse_args(parser)
 
 # Load time series: expects two files, `timeseries.vrt` and `layernames.txt` generated from bash
 # i.e. `ls *.tif | sort -k 1.11 > layernames.txt; gdalbuildvrt -separate timeseries.vrt $(< layernames.txt)`
@@ -85,6 +98,16 @@ GetChunkFilename = function(filename, identifier, length)
     file.path(dirname(filename), paste0(identifier, "_Chunk_", 1:length , "_", basename(filename)))
 }
 
+# Utility function for faster/more memory efficient cropping
+FastCrop = function(input_raster, crop_extent, filename, reference=FALSE, ...)
+{
+    if (reference)
+        return(crop(input_raster, crop_extent, filename=filename, ...))
+    else
+        return(gdalwarp(input_raster@file@name, filename, te=c(crop_extent@xmin, crop_extent@ymin, crop_extent@xmax, crop_extent@ymax),
+                        output_Raster=TRUE))
+}
+
 # foreach-based mc.calc
 ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads=12, ...)
 {
@@ -145,6 +168,8 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
     ResultFilenames = GetChunkFilename(filename, "Output", NumChunks)
     LogFilenames = GetChunkFilename(filename, "Log", NumChunks)
     TempResultFilenames = GetChunkFilename(file.path("tmp", basename(filename)), "Output", NumChunks)
+    if (!dir.exists(dirname(filename)))
+        dir.create(dirname(filename), recursive=TRUE)
     
     # The actual function that SparkR runs: crop and process a block
     scalc = function(Index)
@@ -168,6 +193,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
         
         # Set up raster options    
         options(warn=1)
+        suppressPackageStartupMessages(library(gdalUtils, quietly=TRUE))
         suppressPackageStartupMessages(library(raster, quietly=TRUE))
         if (!dir.exists("tmp"))
             dir.create("tmp")
@@ -185,7 +211,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
             Chunk = brick(ChunkFilenames[Index])
         } else {
             print(paste0("Chunk ", Index, "/", NumChunks, ": cropping to ", ChunkFilenames[Index]))
-            Chunk = crop(input_raster, ChunkExtent, filename=ChunkFilenames[Index])
+            Chunk = FastCrop(input_raster, ChunkExtent, filename=ChunkFilenames[Index])
             print(paste0("Chunk ", Index, "/", NumChunks, ": cropping complete."))
         }
         Chunk = setZ(Chunk, getZ(input_raster))
@@ -366,10 +392,16 @@ GetLastBreakInTile = function(pixel)
 
 #timeseries = LoadTimeSeries("../../landsat78/mosaics-since2013/ndvi")
 #dates = getZ(timeseries) # This is needed in GetLastBreakInTile, otherwise data is lost; no way to get around using the environment unless we want to re-read names on each pixel process
-tile = "X16Y06"
-Vindex = "NDMI"
+#tile = "X16Y06"
+#Vindex = "NDMI"
+tile = args[["tile"]]
+Vindex = args[["vegetation-index"]]
 dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
-timeseries = brick(paste0("/data/mep_cg1/MOD_S10/additional_VIs/", tile, "/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_", Vindex, ".tif"))
+if (!is.null(args[["input-brick"]])) {
+    timeseries = brick(args[["input-brick"]])
+} else {
+    timeseries = brick(paste0("/data/mep_cg1/MOD_S10/additional_VIs_new/", tile, "/MOD_S10_TOC_", tile, "_20090101-20171231_250m_C6_", Vindex, ".tif"))
+}
 timeseries = setZ(timeseries, dates)
 
 DateRange = range(dates)
