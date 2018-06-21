@@ -21,6 +21,10 @@ parser = add_option(parser, c("-v", "--vegetation-index"), type="character", def
                     help="Vegetation index to process. Case sensitive to input files. (Default: %default)", metavar="VI")
 parser = add_option(parser, c("-i", "--input-brick"), type="character",
                     help="Input brick file of MODIS vegetation index time series.", metavar="file")
+parser = add_option(parser, c("-c", "--crop-only"), type="logical", action="store_true",
+                    help="Run only the step of cropping the input into chunks.")
+parser = add_option(parser, c("-l", "--log"), type="logical", action="store_true",
+                    help="Output log files next to the input and output chunks. If not specified, everything is output to stdout.")
 
 args = parse_args(parser)
 
@@ -157,7 +161,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
 }
 
 # SparkR-based mc.calc
-SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=NULL, options=NULL)
+SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype=NULL, options=NULL)
 {
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
@@ -175,12 +179,15 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
     scalc = function(Index)
     {
         # Set up the log
-        LogFile = LogFilenames[Index]
-        if (!file.exists(LogFile))
-            file.create(LogFile)
-        LogFile = file(LogFile, "a")
-        sink(LogFile, TRUE)
-        sink(LogFile, TRUE, "message") # This sinks stderr: potentially dangerous!
+        if (args[["log"]])
+        {
+            LogFile = LogFilenames[Index]
+            if (!file.exists(LogFile))
+                file.create(LogFile)
+            LogFile = file(LogFile, "a")
+            sink(LogFile, TRUE)
+            sink(LogFile, TRUE, "message") # This sinks stderr: potentially dangerous!
+        }
     
         # Disable file checks, because we now check it outside the loop
         # if (file.exists(ResultFilenames[Index]))
@@ -214,6 +221,8 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
             Chunk = FastCrop(input_raster, ChunkExtent, filename=ChunkFilenames[Index])
             print(paste0("Chunk ", Index, "/", NumChunks, ": cropping complete."))
         }
+        if (args[["crop-only"]])
+            return()
         Chunk = setZ(Chunk, getZ(input_raster))
         names(Chunk) = names(input_raster)
         
@@ -250,8 +259,11 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
         unlink(ChunkFilenames[Index])
         
         # Stop logging
-        sink(type="message")
-        sink()
+        if (args[["log"]])
+        {
+            sink(type="message")
+            sink()
+        }
     }
     
     # Check which files don't exist and process only those chunks, so that the cluster doesn't need to spawn a VM for doing nothing
