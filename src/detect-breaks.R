@@ -161,7 +161,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
 }
 
 # SparkR-based mc.calc
-SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype=NULL, options=NULL)
+SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=NULL, options=NULL)
 {
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
@@ -179,7 +179,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
     scalc = function(Index)
     {
         # Set up the log
-        if (args[["log"]])
+        if (!is.null(args[["log"]]))
         {
             LogFile = LogFilenames[Index]
             if (!file.exists(LogFile))
@@ -221,7 +221,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
             Chunk = FastCrop(input_raster, ChunkExtent, filename=ChunkFilenames[Index])
             print(paste0("Chunk ", Index, "/", NumChunks, ": cropping complete."))
         }
-        if (args[["crop-only"]])
+        if (!is.null(args[["crop-only"]]))
             return()
         Chunk = setZ(Chunk, getZ(input_raster))
         names(Chunk) = names(input_raster)
@@ -259,7 +259,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
         unlink(ChunkFilenames[Index])
         
         # Stop logging
-        if (args[["log"]])
+        if (!is.null(args[["log"]]))
         {
             sink(type="message")
             sink()
