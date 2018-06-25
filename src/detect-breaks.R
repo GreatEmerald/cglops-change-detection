@@ -2,7 +2,6 @@
 # R functions for break detection
 # to be moved to a subdirectory when a frontend script is made
 
-library(SparkR)
 library(rgdal)
 library(raster)
 
@@ -25,8 +24,12 @@ parser = add_option(parser, c("-c", "--crop-only"), type="logical", action="stor
                     help="Run only the step of cropping the input into chunks.")
 parser = add_option(parser, c("-l", "--log"), type="logical", action="store_true",
                     help="Output log files next to the input and output chunks. If not specified, everything is output to stdout.")
-
+parser = add_option(parser, c("-m", "--method"), type="character", default="SparkR",
+                    help="Method to use for multithreading: SparkR, foreach, none. (Default: %default)", metavar="method")
 args = parse_args(parser)
+
+if (args[["method"]] == "SparkR")
+    library(SparkR)
 
 # Load time series: expects two files, `timeseries.vrt` and `layernames.txt` generated from bash
 # i.e. `ls *.tif | sort -k 1.11 > layernames.txt; gdalbuildvrt -separate timeseries.vrt $(< layernames.txt)`
@@ -161,7 +164,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
 }
 
 # SparkR-based mc.calc
-SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=NULL, options=NULL)
+SparkCalc = function(input_raster, fx, filename, mem_usage=0.25*1024^3, datatype=NULL, options=NULL)
 {
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
@@ -269,19 +272,25 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.5*1024^3, datatype=
     # Check which files don't exist and process only those chunks, so that the cluster doesn't need to spawn a VM for doing nothing
     FileIndices = which(!sapply(ResultFilenames, file.exists))
     
-    # Workaround for a timeout bug in SparkR 1.4-2.0, fixed in 2.1
-    connectBackend.orig <- getFromNamespace('connectBackend', pos='package:SparkR')
-    connectBackend.patched <- function(hostname, port, timeout = 3600*48) {
-        connectBackend.orig(hostname, port, timeout)
+    if (args[["method"]] == "SparkR")
+    {
+        # Workaround for a timeout bug in SparkR 1.4-2.0, fixed in 2.1
+        connectBackend.orig <- getFromNamespace('connectBackend', pos='package:SparkR')
+        connectBackend.patched <- function(hostname, port, timeout = 3600*48) {
+            connectBackend.orig(hostname, port, timeout)
+        }
+        assignInNamespace("connectBackend", value=connectBackend.patched, pos='package:SparkR')
+        
+        sparkR.session()
+        spark.lapply(FileIndices, scalc)
+        sparkR.session.stop()
+    } else {
+        lapply(FileIndices, scalc)
     }
-    assignInNamespace("connectBackend", value=connectBackend.patched, pos='package:SparkR')
     
-    sparkR.session()
-    spark.lapply(FileIndices, scalc)
-    sparkR.session.stop()
-    
-    b_metrics = gdalUtils::mosaic_rasters(gdalfile=ResultFilenames, dst_dataset=filename,
-        output_Raster=TRUE, verbose=TRUE, ot="Int16")
+    if (is.null(args[["crop-only"]]))
+        b_metrics = gdalUtils::mosaic_rasters(gdalfile=ResultFilenames, dst_dataset=filename,
+            output_Raster=TRUE, verbose=TRUE, ot="Int16")
 }
 
 # Get last break in a pixel time series
