@@ -164,7 +164,7 @@ ForeachCalc = function(input_raster, fx, filename, mem_usage=0.9*1024^3, threads
 }
 
 # SparkR-based mc.calc
-SparkCalc = function(input_raster, fx, filename, mem_usage=0.25*1024^3, datatype=NULL, options=NULL)
+SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype=NULL, options=NULL)
 {
     ChunkInfo = GetChunkSize(input_raster, mem_usage)
     NumChunks = ChunkInfo["NumChunks"]
@@ -175,6 +175,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.25*1024^3, datatype
     ResultFilenames = GetChunkFilename(filename, "Output", NumChunks)
     LogFilenames = GetChunkFilename(filename, "Log", NumChunks)
     TempResultFilenames = GetChunkFilename(file.path("tmp", basename(filename)), "Output", NumChunks)
+    #TempResultGrds = as.character(unlist(as.data.frame(strsplit(TempResultFilenames, "[.]"))[1,]))
     if (!dir.exists(dirname(filename)))
         dir.create(dirname(filename), recursive=TRUE)
     
@@ -239,6 +240,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.25*1024^3, datatype
         # Unclean tmp dir: make sure to remove in order to not need to overwrite
         if (file.exists(TempResultFilenames[Index]))
             file.remove(TempResultFilenames[Index])
+        tryCatch(
         if (!is.null(datatype))
         {
             if (!is.null(options))
@@ -252,10 +254,37 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.25*1024^3, datatype
                 ResultChunk = calc(x=Chunk, fun=fx, filename=TempResultFilenames[Index], options=options)
             else
                 ResultChunk = calc(x=Chunk, fun=fx, filename=TempResultFilenames[Index])
-        }
+        },
+        error=function(e){
+            print(paste("Error writing output file", TempResultFilenames[Index], e))
+            print("List of files in ./tmp:")
+            print(list.files("tmp"))
+            print("Trying to create a file ./tmp/test:")
+            file.create("tmp/test")
+            print("List of files in ./tmp:")
+            print(list.files("tmp"))
+            print("Trying to write an example raster:")
+            r1 <- raster(nrows=108, ncols=21, xmn=0, xmx=10)
+            print(r1)
+            writeRaster(r1, filename="tmp/test.tif")
+            print("List of files in ./tmp:")
+            print(list.files("tmp"))
+            print("ResultChunk is:")
+            print(ResultChunk)
+            print("Trying to write it in GRD:")
+            writeRaster(ResultChunk, filename="tmp/Output.grd")
+            print("List of files in ./tmp:")
+            print(list.files("tmp"))
+            print("Trying to write it in GeoTIFF:")
+            writeRaster(ResultChunk, filename=TempResultFilenames[Index])
+            print("List of files in ./tmp:")
+            print(list.files("tmp"))
+        })
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing complete."))
         cat(c("Moving file ", TempResultFilenames[Index], " to ", ResultFilenames[Index], "\n"))
         file.copy(TempResultFilenames[Index], ResultFilenames[Index])
+        #cat(c("Writing file ", TempResultGrds[Index], " to ", ResultFilenames[Index], "\n"))
+        #writeRaster(ResultChunk, filename=ResultFilenames[Index], datatype=datatype)
         cat(c("Cleaning up ", TempResultFilenames[Index], "\n"))
         file.remove(TempResultFilenames[Index])
         print(paste0("unlink(", ChunkFilenames[Index], ")"))
@@ -390,25 +419,6 @@ GetLastBreakInTile = function(pixel)
     #OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays
     OutMatrix[as.character(BreakpointYears),] = BreakpointDays # Put it into our matrix in the right years
     return(c(t(OutMatrix))) # Flatten matrix
-    
-    #return(as.integer(as.Date(date_decimal(bpp$time[max(bf$breakpoints)])) - t0))
-    
-    #print("BF:")
-    #print(bf)
-    
-    #if (inherits(bf, "breakpoints"))
-    #    return(GetLastBreak(bf))
-    
-    # For AnalysePixel() compat
-    #if (inherits(bf, "bfast"))
-    #{
-        # No breaks, e.g. 16252501
-    #    if (bf$nobp$Vt && bf$nobp$Wt)
-    #        return(IdToProbaVEpoch(1))
-    #    return(GetLastBreak(bf$output[[length(bf$output)]]$bp.Vt))
-    #}
-    
-    #return(bf)
 }
 
 #timeseries = LoadTimeSeries("../../landsat78/mosaics-since2013/ndvi")
@@ -426,7 +436,7 @@ if (!is.null(args[["input-brick"]])) {
 timeseries = setZ(timeseries, dates)
 
 DateRange = range(dates)
-Years = year(DateRange[1]):year(DateRange[2])
+Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
 
 TSType = "10-day" # Type of time series
 Order = 3 # Which harmonic order to use
@@ -435,6 +445,6 @@ EnableFastBfast()
 #ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
 #    progress="text", options="COMPRESS=DEFLATE")
 
-SparkCalc(timeseries, GetLastBreakInTile, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, tile, "breaks-order3.tif"), datatype="INT2S", options="COMPRESS=DEFLATE")
+SparkCalc(timeseries, GetLastBreakInTile, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, tile, "breaks-order3.tif"), datatype="INT2S")#, options="COMPRESS=DEFLATE")
 
 #SparkCalc(timeseries, GetLastBreakInTile, "../../tmp/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
