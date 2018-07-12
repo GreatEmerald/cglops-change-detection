@@ -26,6 +26,8 @@ parser = add_option(parser, c("-l", "--log"), type="logical", action="store_true
                     help="Output log files next to the input and output chunks. If not specified, everything is output to stdout.")
 parser = add_option(parser, c("-m", "--method"), type="character", default="SparkR",
                     help="Method to use for multithreading: SparkR, foreach, none. (Default: %default)", metavar="method")
+parser = add_option(parser, c("-o", "--order"), type="integer", default=3,
+                    help="Harmonic order for preprocessing. (Default: %default)", metavar="tile")
 args = parse_args(parser)
 
 if (args[["method"]] == "SparkR")
@@ -263,20 +265,21 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
             file.create("tmp/test")
             print("List of files in ./tmp:")
             print(list.files("tmp"))
-            print("Trying to write an example raster:")
-            r1 <- raster(nrows=108, ncols=21, xmn=0, xmx=10)
-            print(r1)
-            writeRaster(r1, filename="tmp/test.tif")
+            #print("Trying to write an example raster:")
+            #r1 <- raster(nrows=108, ncols=21, xmn=0, xmx=10)
+            #print(r1)
+            #writeRaster(r1, filename="tmp/test.tif") # Fails
             print("List of files in ./tmp:")
             print(list.files("tmp"))
             print("ResultChunk is:")
             print(ResultChunk)
             print("Trying to write it in GRD:")
-            writeRaster(ResultChunk, filename="tmp/Output.grd")
+            GrdFilename = sub("[.]tif", ".grd", TempResultFilenames[Index])
+            writeRaster(ResultChunk, filename=GrdFilename)
             print("List of files in ./tmp:")
             print(list.files("tmp"))
-            print("Trying to write it in GeoTIFF:")
-            writeRaster(ResultChunk, filename=TempResultFilenames[Index])
+            print("Trying to convert it to a GeoTIFF:")
+            ResultChunk = gdal_translate(GrdFilename, TempResultFilenames[Index], ot="Int16", verbose=TRUE, output_Raster=TRUE)
             print("List of files in ./tmp:")
             print(list.files("tmp"))
         })
@@ -318,8 +321,13 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
     }
     
     if (is.null(args[["crop-only"]]))
+    {
+        print(paste("Starting mosaicking to", filename))
         b_metrics = gdalUtils::mosaic_rasters(gdalfile=ResultFilenames, dst_dataset=filename,
-            output_Raster=TRUE, verbose=TRUE, ot="Int16")
+            output_Raster=TRUE, verbose=TRUE, ot="Int16", co="COMPRESS=DEFLATE")
+        print(paste("Success, removing chunks."))
+        unlink(ResultFilenames)
+    }
 }
 
 # Get last break in a pixel time series
@@ -439,12 +447,12 @@ DateRange = range(dates)
 Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
 
 TSType = "10-day" # Type of time series
-Order = 3 # Which harmonic order to use
+Order = args[["order"]] # Which harmonic order to use
 
 EnableFastBfast()
 #ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
 #    progress="text", options="COMPRESS=DEFLATE")
 
-SparkCalc(timeseries, GetLastBreakInTile, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, tile, "breaks-order3.tif"), datatype="INT2S")#, options="COMPRESS=DEFLATE")
+SparkCalc(timeseries, GetLastBreakInTile, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, tile, paste0("breaks-order", Order, ".tif")), datatype="INT2S")#, options="COMPRESS=DEFLATE")
 
 #SparkCalc(timeseries, GetLastBreakInTile, "../../tmp/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")
