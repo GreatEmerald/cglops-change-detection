@@ -1,6 +1,8 @@
 # Convert Hansen's data into the same format as our own generated breakpoints
 library(raster)
 library(gdalUtils)
+library(foreach)
+library(doParallel)
 
 # Download the data
 StorageDir = "/home/greatemerald/shared/hansen"
@@ -25,11 +27,17 @@ HansenSource = raster(HansenSourceFile)
 PVTileCombinations = expand.grid(paste0("X", 15:23), paste0("Y0", 5:6), stringsAsFactors=FALSE)
 PVTileList = paste0(PVTileCombinations$Var1, PVTileCombinations$Var2)
 
-for (Tile in PVTileList)
+registerDoParallel(cores = 4)
+foreach (Tile=iter(PVTileList), .inorder=FALSE) %dopar%
 {
-    SampleRaster = paste0("/data/mep_cg1/MOD_S10/20090101/MOD_S10_TOC_", Tile, "_20090101_250M_C6.tiff")
+    SampleRaster = raster(paste0("/data/mep_cg1/MOD_S10/20090101/MOD_S10_TOC_", Tile, "_20090101_250M_C6.tiff"))
     OutputFile = file.path(StorageDir, "ProbaTiles", paste0(Tile, ".tif"))
     if (!file.exists(OutputFile))
-        resample(HansenSource, raster(SampleRaster), method="ngb",
+    {
+        CroppedFile = file.path(StorageDir, "Cropped", paste0(Tile, ".tif"))
+        CroppedTile = crop(HansenSource, SampleRaster, snap="out",
+                 progress="text", filename=CroppedFile, datatype="INT1U", options="COMPRESS=DEFLATE")
+        resample(CroppedTile, SampleRaster, method="ngb",
                  progress="text", filename=OutputFile, datatype="INT1U", options="COMPRESS=DEFLATE")
+    }
 }

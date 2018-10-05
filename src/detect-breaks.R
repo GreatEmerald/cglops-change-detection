@@ -2,13 +2,16 @@
 # R functions for break detection
 # to be moved to a subdirectory when a frontend script is made
 
-library(rgdal)
-library(raster)
+print(version) # Make sure the R version matches the packages'
 
 # Load from an external package archive for Spark
 .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
-library(bfast)
+#print(.libPaths())
+
+library(rgdal)
+library(raster)
 library(strucchange)
+library(bfast)
 library(lubridate)
 library(optparse)
 
@@ -206,6 +209,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
         
         # Set up raster options    
         options(warn=1)
+        .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
         suppressPackageStartupMessages(library(gdalUtils, quietly=TRUE))
         suppressPackageStartupMessages(library(raster, quietly=TRUE))
         if (!dir.exists("tmp"))
@@ -234,7 +238,6 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
         
         # Process the block
         print(paste0("Chunk ", Index, "/", NumChunks, ": processing to ", ResultFilenames[Index]))
-        .libPaths(c("/data/users/Public/greatemerald/r-packages", .libPaths()))
         suppressPackageStartupMessages(library(strucchange, quietly=TRUE))
         suppressPackageStartupMessages(library(bfast, quietly=TRUE))
         suppressPackageStartupMessages(library(lubridate, quietly=TRUE))

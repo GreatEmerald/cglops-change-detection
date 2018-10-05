@@ -100,6 +100,8 @@ for (Tile in TileList)
                 # Some bug in gdalbuildvrt results in -b just dropping all bands after the number, which is not what we want.
                 # Fix the resulting VRT manually:
                 system(paste0('sed -i "s|<SourceBand>1</SourceBand>|<SourceBand>', YearToBand(Year) ,'</SourceBand>|" ', VRTFile))
+                # Another bug is pixels displaying off by one, due to rounding errors. Something like this fixes it:
+                # sed s/\.000.*?"/"/g && sed s/79\.999.*?"/80"/g && sed s/39\.999.*?"/40"/g
                 # Read in the raster
                 VRTRaster = brick(VRTFile)
                 

@@ -211,3 +211,214 @@ DateFromTS = function(timeseries)
         return(as.Date(as.numeric(timestamps)))
     }
 }
+
+#######################
+# Check the results of the breakpoint validation
+
+breakval = st_read("../data/valgroup27_exports_20180904_LandCoverChangeDetection_1.csv", options=c("X_POSSIBLE_NAMES=sample_x", "Y_POSSIBLE_NAMES=sample_y"))
+st_crs(breakval) = 4326
+ChangedPixels = breakval[breakval$legend_name=="CGLOPS Land Cover Change Detection validation - Did the LC type at 100m x 100m change?",]
+plot(ChangedPixels["name"])
+levels(ChangedPixels$name)
+plot(ChangedPixels$name)
+nrow(ChangedPixels[ChangedPixels$name!="No",])
+plot(ChangedPixels[ChangedPixels$name!="No",]$name)
+plot(ChangedPixels[ChangedPixels$name!="No","name"])
+
+# All subpixels with marked change
+FilteredPoints = breakval[breakval$legend_name=="CGLOPS Land Cover Change Detection validation - Mark LC change",]
+plot(FilteredPoints$name)
+unique(FilteredPoints$name)
+FilteredPoints
+# Get one value per MODIS pixel
+FilteredPoints = FilteredPoints[!duplicated(FilteredPoints[,c("name", "sample_x", "sample_y")]),]
+duplicated(FilteredPoints[,c("sample_x", "sample_y")]) # No points where changed happened during two years
+
+ChangedOnly = ChangedPixels[ChangedPixels$name!="No",]
+ChangedOnly$geometry %in% FilteredPoints$geometry # There are two points that are labelled as change but no subpixels
+ExtraPoints = ChangedOnly[!ChangedOnly$geometry %in% FilteredPoints$geometry,] # They are complete change in 2016, so relabel as such
+ExtraPoints$name = factor("LC change 2016", levels = levels(ChangedOnly$name))
+
+AllChanged = rbind(FilteredPoints, ExtraPoints)
+any(duplicated(AllChanged[,c("sample_x", "sample_y")])) # No duplicates
+rm(breakval)
+
+# Save back a trimmed file with relevant parts
+st_write(ChangedPixels[c("name", "sample_x", "sample_y")], "../data/breakpoint_validation.csv")
+st_write(AllChanged[c("legend_name", "name", "confidence", "sample_x", "sample_y")], "../data/breakpoint_changed_pixels.csv")
+
+# Check which model performs the best
+#                                  | First is bad, others are almost accurate
+WinsEVI2   = c(T, F, F, F, T, T, F, F, T, F, F, T, T, F, F, F, T, F, T, F, F, F, T, F, F, T, T)
+WinsEVI3   = c(T, F, F, F, T, T, T, F, T, T, F, T, T, F, F, T, T, F, T, F, F, F, F, T, T, F, T)
+WinsNDMI2  = c(T, F, F, F, F, F, F, F, T, F, F, F, F, T, T, F, T, F, F, T, F, T, T, F, F, T, T)
+WinsNDMI3  = c(T, F, F, F, F, F, T, T, T, F, F, F, F, T, T, F, T, F, F, T, F, T, T, T, T, T, T)
+WinsHansen = c(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F)
+#                    |     | Detected as 2014 instead 
+#                       |           | Detected correctly but 130/160 m away
+#                                                     | Detected as 2013
+
+Winners = cbind(WinsEVI2, WinsEVI3, WinsNDMI2, WinsNDMI3)
+colSums(Winners) # Draw between EVI3 and NDMI3
+colMeans(Winners) # 52% accuracy
+mean(apply(Winners, 1, any)) # If we take all, we get 78% accuracy
+mean(apply(cbind(WinsEVI3, WinsNDMI3), 1, any)) # And we lose nothing if we omit all 2nd order models
+
+# Load the relevant raster time series
+source("utils/dates.r")
+library(gdalUtils)
+library(raster)
+library(bfast)
+library(strucchange)
+library(zoo)
+EVIMosaicFile = "/data/users/Public/greatemerald/modis/raw-input-mosaic-evi.vrt"
+if (!file.exists(EVIMosaicFile))
+{
+    InputFiles = c("/data/mep_cg1/MOD_S10/additional_VIs_new/X16Y06/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_EVI.tif",
+                   "/data/mep_cg1/MOD_S10/additional_VIs_new/X17Y06/MOD_S10_TOC_X17Y06_20090101-20171231_250m_C6_EVI.tif",
+                   "/data/mep_cg1/MOD_S10/additional_VIs_new/X18Y06/MOD_S10_TOC_X18Y06_20090101-20171231_250m_C6_EVI.tif",
+                   "/data/mep_cg1/MOD_S10/additional_VIs_new/X19Y06/MOD_S10_TOC_X19Y06_20090101-20171231_250m_C6_EVI.tif")
+    gdalbuildvrt(InputFiles, EVIMosaicFile)
+}
+EVIMosaic = brick(EVIMosaicFile)
+EVITSFile = "../data/ChangedEVITS.csv"
+if (!file.exists(EVITSFile))
+{
+    ChangedEVITS = extract(EVIMosaic, AllChanged)
+    write.csv(ChangedEVITS, EVITSFile)
+} else ChangedEVITS = as.matrix(read.csv(EVITSFile, row.names=1))
+
+NDMIMosaicFile = "/data/users/Public/greatemerald/modis/raw-input-mosaic-ndmi.vrt"
+if (!file.exists(NDMIMosaicFile))
+{
+    InputFiles = c("/data/mep_cg1/MOD_S10/additional_VIs_new/X16Y06/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_NDMI.tif",
+                   "/data/mep_cg1/MOD_S10/additional_VIs_new/X17Y06/MOD_S10_TOC_X17Y06_20090101-20171231_250m_C6_NDMI.tif",
+                   "/data/mep_cg1/MOD_S10/additional_VIs_new/X18Y06/MOD_S10_TOC_X18Y06_20090101-20171231_250m_C6_NDMI.tif",
+                   "/data/mep_cg1/MOD_S10/additional_VIs_new/X19Y06/MOD_S10_TOC_X19Y06_20090101-20171231_250m_C6_NDMI.tif")
+    gdalbuildvrt(InputFiles, NDMIMosaicFile)
+}
+NDMIMosaic = brick(NDMIMosaicFile)
+NDMITSFile = "../data/ChangedNDMITS.csv"
+if (!file.exists(NDMITSFile))
+{
+    ChangedNDMITS = extract(NDMIMosaic, AllChanged)
+    write.csv(ChangedNDMITS, NDMITSFile)
+} else ChangedNDMITS = as.matrix(read.csv(NDMITSFile, row.names=1))
+# The extraction is correct, no off-by-one issues here, checked in QGIS with original data
+
+library(lubridate)
+AC.df = AllChanged
+class(AC.df) = "data.frame"
+dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
+plot(ChangedEVITS[1,]~dates, type="l", main=paste(1, AC.df[1,"confidence"])); abline(v=as.Date("2016-01-01")); abline(v=as.Date("2017-01-01"))
+
+# Plots
+for (i in 1:34) {
+    if (!all(is.na(ChangedEVITS[i,])))
+        plot(ChangedEVITS[i,]~dates, type="l", main=paste(i, AllChanged$name[i], "EVI", AC.df[i,"confidence"])); abline(v=as.Date("2016-01-01")); abline(v=as.Date("2017-01-01"))
+}
+for (i in 1:34) {
+    if (!all(is.na(ChangedNDMITS[i,])))
+        plot(ChangedNDMITS[i,]~dates, type="l", main=paste(i, AllChanged$name[i], "NDMI", AC.df[i,"confidence"])); abline(v=as.Date("2016-01-01")); abline(v=as.Date("2017-01-01"))
+}
+
+scpvals = function(ts)
+{
+    if (all(is.na(ts)))
+        return(NA)
+    bfts = bfastts(ts, dates, type="10-day")
+    bpp = bfastpp(bfts, order=3)
+    return(sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value)
+}
+
+EVI_pvals = apply(ChangedEVITS, 1, scpvals)
+NDMI_pvals = apply(ChangedNDMITS, 1, scpvals)
+EVI_pvals  < 0.05 # Considered breaks
+NDMI_pvals < 0.05 # Ideally all of these would be true; except that in most cases we can't even see the break by eye
+sum(EVI_pvals < 0.05) # One more
+sum(NDMI_pvals < 0.05)
+# Those that are FALSE will never be winners
+# Filter out 2017
+EVI_pvals_2016 = EVI_pvals[AllChanged$name=="LC change 2016"]
+length(EVI_pvals_2016) == length(WinsEVI3)
+length(AllChanged$name)
+length(EVI_pvals)
+
+WinsEVI3[!EVI_pvals_2016 < 0.05]
+
+## Draw EVI point 9 with harmonics
+MyTS = bfastts(ChangedEVITS[9,], dates, "10-day")
+#MyTS = na.approx(MyTS) # This step is optional, just for visualisation
+MyBF = bfast(MyTS, GetBreakNumber(dates), season="harmonic", max.iter=3)
+MyIter = length(MyBF$output)
+plot(MyBF)
+plot(MyBF, "seasonal")
+plot(MyTS)
+plot(MyBF$output)
+MyFit = MyBF$output[[MyIter]]$St + MyBF$output[[MyIter]]$Tt
+MyTrend = MyBF$output[[MyIter]]$Tt
+plot(MyFit)
+MyTimes = as.numeric(time(MyBF$output[[MyIter]]$Tt))
+MyTimes = MyTimes[!is.na(MyBF$output[[MyIter]]$Tt)]
+MyBreaks = MyTimes[MyBF$output[[MyIter]]$bp.Vt$breakpoints]
+plot(MyTS, ylab="EVI", main="Pixel with a confirmed break in 2016"); lines(MyFit, col="blue"); lines(MyTrend, col="green"); abline(v=MyBreaks, col="red")
+
+MyPlotBfast = function(MyBF, PlotData=TRUE, ...)
+{
+    MyIter = length(MyBF$output)
+    MyFit = MyBF$output[[MyIter]]$St + MyBF$output[[MyIter]]$Tt
+    MyTrend = MyBF$output[[MyIter]]$Tt
+    MyTimes = as.numeric(time(MyBF$output[[MyIter]]$Tt))
+    MyTimes = MyTimes[!is.na(MyBF$output[[MyIter]]$Tt)]
+    if (any(!is.na(MyBF$output[[MyIter]]$bp.Vt)))
+    {
+        MyBreaks = MyTimes[MyBF$output[[MyIter]]$bp.Vt$breakpoints]
+    } else {
+        MyBreaks = NULL
+    }
+    if (PlotData)
+    {
+        plot(MyBF$Yt, ...)
+        lines(MyFit, col="blue")
+    } else {
+        plot(MyFit, col="blue", ...)
+    }
+    lines(MyTrend, col="green")
+    abline(v=MyBreaks, col="red")
+}
+
+for (i in 1:34) {
+    if (!all(is.na(ChangedEVITS[i,])))
+    {
+        MyBF = try(bfast(bfastts(na.approx(ChangedEVITS[i,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=1))
+        if (class(MyBF) == "bfast")
+            MyPlotBfast(MyBF, ylab="EVI", main=paste(i, AllChanged$name[i], "EVI", AC.df[i,"confidence"])); abline(v=2016); abline(v=2017)
+    }
+}
+
+for (i in 1:34) {
+    if (!all(is.na(ChangedNDMITS[i,])))
+    {
+        MyBF = try(bfast(bfastts(na.approx(ChangedNDMITS[i,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=1))
+        if (class(MyBF) == "bfast")
+            MyPlotBfast(MyBF, ylab="NDMI", main=paste(i, AllChanged$name[i], "NDMI", AC.df[i,"confidence"])); abline(v=2016); abline(v=2017)
+    }
+}
+
+# Interesting cases:
+#   32: clear break, but a lot more spurious breaks are detected
+#   29: outliers
+#   26: a lot of false change, and some true change at the end
+#   24: Clear change at the end
+#   22/23: No change lately
+#   28/21: no breaks
+#   16/19: all breaks during peaks, this is very suspect. Not real change
+#   15: nice big change at the right time
+#   14: too many breaks + actual real break
+#   13: A lot of variation, good example
+#    9: too many breaks, but a clear example
+#    6/8: Also a lot of variation
+#    2: strong example without too many breaks
+
+MyBF = bfast(bfastts(na.approx(ChangedEVITS[2,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=3)
+MyPlotBfast(MyBF, FALSE, ylab="EVI", main="BFAST time series segmentation")
