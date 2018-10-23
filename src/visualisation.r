@@ -322,22 +322,33 @@ for (i in 1:34) {
         plot(ChangedNDMITS[i,]~dates, type="l", main=paste(i, AllChanged$name[i], "NDMI", AC.df[i,"confidence"])); abline(v=as.Date("2016-01-01")); abline(v=as.Date("2017-01-01"))
 }
 
-scpvals = function(ts)
+scpvals = function(ts, from=0)
 {
     if (all(is.na(ts)))
         return(NA)
     bfts = bfastts(ts, dates, type="10-day")
     bpp = bfastpp(bfts, order=3)
+    bpp = bpp[bpp$time > from,]
     return(sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value)
 }
 
 EVI_pvals = apply(ChangedEVITS, 1, scpvals)
 NDMI_pvals = apply(ChangedNDMITS, 1, scpvals)
-EVI_pvals  < 0.05 # Considered breaks
-NDMI_pvals < 0.05 # Ideally all of these would be true; except that in most cases we can't even see the break by eye
-sum(EVI_pvals < 0.05) # One more
-sum(NDMI_pvals < 0.05)
+EVI_p_sig = EVI_pvals  < 0.05 # Considered breaks
+NDMI_p_sig = NDMI_pvals < 0.05 # Ideally all of these would be true; except that in most cases we can't even see the break by eye
+sum(EVI_p_sig) # One more
+sum(NDMI_p_sig)
+which(EVI_p_sig != NDMI_p_sig) # Disagreements
 # Those that are FALSE will never be winners
+
+EVI_pvals_14 = apply(ChangedEVITS, 1, scpvals, from=2014)
+NDMI_pvals_14 = apply(ChangedNDMITS, 1, scpvals, from=2014)
+EVI_p_sig_14 = EVI_pvals_14  < 0.05 # Considered breaks
+NDMI_p_sig_14 = NDMI_pvals_14 < 0.05 # Ideally all of these would be true; except that in most cases we can't even see the break by eye
+sum(EVI_p_sig_14) # Two more
+sum(NDMI_p_sig_14)
+which(EVI_p_sig_14 != NDMI_p_sig_14) # Disagreements
+
 # Filter out 2017
 EVI_pvals_2016 = EVI_pvals[AllChanged$name=="LC change 2016"]
 length(EVI_pvals_2016) == length(WinsEVI3)
@@ -387,7 +398,7 @@ MyPlotBfast = function(MyBF, PlotData=TRUE, ...)
     abline(v=MyBreaks, col="red")
 }
 
-for (i in 1:34) {
+for (i in which(EVI_p_sig != NDMI_p_sig)) {
     if (!all(is.na(ChangedEVITS[i,])))
     {
         MyBF = try(bfast(bfastts(na.approx(ChangedEVITS[i,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=1))
@@ -396,7 +407,7 @@ for (i in 1:34) {
     }
 }
 
-for (i in 1:34) {
+for (i in which(EVI_p_sig != NDMI_p_sig)) {
     if (!all(is.na(ChangedNDMITS[i,])))
     {
         MyBF = try(bfast(bfastts(na.approx(ChangedNDMITS[i,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=1))
@@ -413,12 +424,12 @@ for (i in 1:34) {
 #   22/23: No change lately
 #   28/21: no breaks
 #   16/19: all breaks during peaks, this is very suspect. Not real change
-#   15: nice big change at the right time
+#   15: nice big change at the right time; but none in Landsat!
 #   14: too many breaks + actual real break
 #   13: A lot of variation, good example
 #    9: too many breaks, but a clear example
 #    6/8: Also a lot of variation
 #    2: strong example without too many breaks
 
-MyBF = bfast(bfastts(na.approx(ChangedEVITS[2,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=3)
-MyPlotBfast(MyBF, FALSE, ylab="EVI", main="BFAST time series segmentation")
+MyBF = bfast(bfastts(na.approx(ChangedEVITS[1,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=1)
+MyPlotBfast(MyBF, TRUE, ylab="EVI", main="BFAST time series segmentation")
