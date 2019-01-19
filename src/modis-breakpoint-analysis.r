@@ -119,9 +119,13 @@ TestMODBreakpointDetection = function(i, ChangedVITS, h = 36, threshold=0.25,
 
 M_EVI_2009 = sapply(1:nrow(AC.df), TestMODBreakpointDetection, ChangedEVITS, scrange=NULL)
 mean(M_EVI_2009) # 53%
+FPStats(M_EVI_2009) # 3.7%
 M_NDMI_2009 = sapply(1:nrow(AC.df), TestMODBreakpointDetection, ChangedNDMITS, scrange=NULL)
 mean(M_NDMI_2009) # 44%
+FPStats(M_NDMI_2009) # 3.2%
 mean(M_EVI_2009 | M_NDMI_2009) # 64%
+FPStats(M_EVI_2009 | M_NDMI_2009) # 3.5%
+FPStats(M_EVI_2009 & M_NDMI_2009) # 3.6%
 
 # From 2014
 M_EVI_2014 = sapply(1:nrow(AC.df), TestMODBreakpointDetection, ChangedEVITS, start=as.Date("2014-01-01"), scrange=NULL)
@@ -198,12 +202,18 @@ FPStats = function(IsBreakInTargetYear)
     ChangePoints = !is.na(AllPoints$Change)
     TruePositiveCount = sum(IsBreakInTargetYear[ChangePoints], na.rm=TRUE)
     FalsePositiveCount = sum(IsBreakInTargetYear[!ChangePoints], na.rm=TRUE)
-    TruePositiveRate = TruePositiveCount / sum(ChangePoints)
-    FalsePositiveRate = FalsePositiveCount / sum(!ChangePoints)
+    TrueNegativeCount = sum(!IsBreakInTargetYear[!ChangePoints], na.rm=TRUE)
+    FalseNegativeCount = sum(!IsBreakInTargetYear[ChangePoints], na.rm=TRUE)
+    TruePositiveRate = TruePositiveCount / sum(ChangePoints) # Sensitivity
+    Specificity = TrueNegativeCount / (TrueNegativeCount + FalsePositiveCount)
+    FalsePositiveRate = FalsePositiveCount / sum(!ChangePoints) # False positive rate or alpha or p-value or Type I Error
     SignalToNoise = TruePositiveCount / FalsePositiveCount
-    SignalToNoiseRate = TruePositiveRate / FalsePositiveRate
-    return(data.frame(TruePositiveCount, FalsePositiveCount, TruePositiveRate, FalsePositiveRate,
-                      SignalToNoise, SignalToNoiseRate))
+    SignalToNoiseRate = TruePositiveRate / FalsePositiveRate # Likelihood Ratio for Positive Tests
+    PositivePredictiveValue = TruePositiveCount / (TruePositiveCount + FalsePositiveCount)
+    Accuracy = (TruePositiveCount + TrueNegativeCount) / length(ChangePoints)
+    return(data.frame(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount,
+                      TruePositiveRate, Specificity, FalsePositiveRate, SignalToNoise, SignalToNoiseRate,
+                      PositivePredictiveValue, Accuracy))
 }
 
 # First: reference values
@@ -391,3 +401,39 @@ FPStats(M_NDMI_2009HO) # 4.0%
 FPStats(M_EVI_2009HO | M_NDMI_2009HO) # 3.8%
 
 # All in all, t-test wins... But signal to noise is still only 10%
+
+# Combinations of breakpoints and t-test
+FPStats(M_NDMI_2009) # 3.2%
+FPStats(M_EVI_2009) # 3.7%
+FPStats(T_NDMI_2009) # 9.6%
+FPStats(T_EVI_2009) # 3.6%
+FPStats(M_EVI_2009 & M_NDMI_2009) # 3.6%
+FPStats(M_EVI_2009 | M_NDMI_2009) # 3.5%
+FPStats(T_EVI_2009 & T_NDMI_2009) # 3.2%
+FPStats(T_EVI_2009 | T_NDMI_2009) # 7.1%
+FPStats(M_EVI_2009 & T_EVI_2009) # 2.9%
+FPStats(M_EVI_2009 | T_EVI_2009) # 3.7%
+FPStats(M_EVI_2009 & T_NDMI_2009) # 9.5%
+FPStats(M_EVI_2009 | T_NDMI_2009) # 4.1%
+FPStats(M_NDMI_2009 & T_EVI_2009) # 6.7%
+FPStats(M_NDMI_2009 | T_EVI_2009) # 3.1%
+FPStats(M_NDMI_2009 & T_NDMI_2009) # 9.5%
+FPStats(M_NDMI_2009 | T_NDMI_2009) # 4.1%
+FPStats(M_EVI_2009 & M_NDMI_2009 & T_EVI_2009) # 0
+FPStats(M_EVI_2009 | M_NDMI_2009 | T_EVI_2009) # 3.4%
+FPStats(M_EVI_2009 & M_NDMI_2009 | T_EVI_2009) # 3.7%
+FPStats(M_EVI_2009 | M_NDMI_2009 & T_EVI_2009) # 3.9%
+FPStats(M_EVI_2009 & M_NDMI_2009 & T_NDMI_2009) # 7.1%
+FPStats(M_EVI_2009 | M_NDMI_2009 | T_NDMI_2009) # 3.7%
+FPStats(M_EVI_2009 & M_NDMI_2009 | T_NDMI_2009) # 5.1%
+FPStats(M_EVI_2009 | M_NDMI_2009 & T_NDMI_2009) # 3.9%
+FPStats(T_EVI_2009 & M_NDMI_2009 & T_NDMI_2009) # 0
+FPStats(T_EVI_2009 | M_NDMI_2009 | T_NDMI_2009) # 3.9%
+FPStats(T_EVI_2009 & M_NDMI_2009 | T_NDMI_2009) # 10.0%
+FPStats(T_EVI_2009 | M_NDMI_2009 & T_NDMI_2009) # 5.2%
+FPStats(M_EVI_2009 & T_NDMI_2009 & T_EVI_2009) # 0
+FPStats(M_EVI_2009 | T_NDMI_2009 | T_EVI_2009) # 4.0%
+FPStats(M_EVI_2009 & T_NDMI_2009 | T_EVI_2009) # 6.6%
+FPStats(M_EVI_2009 | T_NDMI_2009 & T_EVI_2009) # 3.8%
+
+FPStats(T_NDMI_2016T) # 10.3%

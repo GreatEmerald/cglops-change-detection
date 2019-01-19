@@ -312,6 +312,7 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
 # This gets converted into a binary yearly mask in postprocessing.
 TTestBreaks = function(pixel)
 {
+    pixel[pixel==-1] = NA
     endyear = year(today(tzone="Europe/Brussels"))
     Results = numeric(endyear-startyear)
     Results[] = NA
@@ -347,7 +348,7 @@ dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
 if (!is.null(args[["input-brick"]])) {
     timeseries = brick(args[["input-brick"]])
 } else {
-    timeseries = brick(paste0("/data/mep_cg1/MOD_S10/additional_VIs_new/", tile, "/MOD_S10_TOC_", tile, "_20090101-20171231_250m_C6_", Vindex, ".tif"))
+    timeseries = brick(paste0("/data/mep_cg1/MOD_S10/additional_VIs_run04/", tile, "/MOD_S10_TOC_", tile, "_20090101-20171231_250m_C6_", Vindex, ".tif"))
 }
 timeseries = setZ(timeseries, dates)
 

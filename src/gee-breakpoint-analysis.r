@@ -18,9 +18,9 @@ for (i in 1:nrow(AC.df))
     Point1TS = CompleteDF[(abs(CompleteDF$longitude - AC.df[i,"sample_x"]) < 0.0002) &
                               (abs(CompleteDF$latitude - AC.df[i,"sample_y"]) < 0.0002),]
     Point1TS = TemporalDailyMerge(Point1TS)
-    print(table(year(Point1TS$time)))
-    print(nrow(Point1TS))
-    next
+    #print(table(year(Point1TS$time)))
+    #print(nrow(Point1TS))
+    #next
     stopifnot(!any(duplicated(Point1TS$time)))
     print(paste("Observations for point", i, ":", nrow(Point1TS)))
     plot(evi~time, data=Point1TS, type="l", main=paste("EVI", i)); abline(v=as.POSIXct(as.Date("2017-01-01")))
