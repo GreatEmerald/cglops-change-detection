@@ -4,12 +4,13 @@
 # Tile to process
 VI=$1
 Tile=$2
+Order=$3
 
-# Step 1: chunk input into ~120 chunks locally
-Rscript ./detect-breaks-ttest.R -t $Tile -v $VI --crop-only -m none -y 2018 || exit 1
+# Step 1: chunk input into ~1400 chunks locally
+Rscript ./detect-breaks.R -t $Tile -v $VI --crop-only -m none -o $Order -f bfastmonitor || exit 1
 
 # Step 2: run the processing on the cluster
-./spark-submit.sh detect-breaks-ttest.R 2 -t $Tile -v $VI -y 2018 || exit 1
+./spark-submit.sh detect-breaks.R 1 -t $Tile -v $VI -o $Order -f bfastmonitor || exit 1
 
 # Step 3: postprocess the result locally
 #Rscript ./postprocess-breaks.r -i /data/users/Public/greatemerald/modis/breaks/$VI/$Tile/breaks-order${Order}.tif || exit 1

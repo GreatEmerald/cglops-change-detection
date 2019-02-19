@@ -31,6 +31,10 @@ parser = add_option(parser, c("-m", "--method"), type="character", default="Spar
                     help="Method to use for multithreading: SparkR, foreach, none. (Default: %default)", metavar="method")
 parser = add_option(parser, c("-o", "--order"), type="integer", default=3,
                     help="Harmonic order for preprocessing. (Default: %default)", metavar="tile")
+parser = add_option(parser, c("-f", "--fct"), type="character", default="bfast",
+                    help="Function for break detection: bfast or bfastmonitor. (Default: %default)", metavar="function")
+parser = add_option(parser, c("-y", "--year"), type="integer", default=2016,
+                    help="The year since which we are detecting breaks. (Default: %default)", metavar="year")
 args = parse_args(parser)
 
 if (args[["method"]] == "SparkR")
@@ -432,17 +436,52 @@ GetLastBreakInTile = function(pixel)
     return(c(t(OutMatrix))) # Flatten matrix
 }
 
+# BFAST Monitor
+BFMBreaks = function(pixel)
+{
+    endyear = year(today(tzone="Europe/Brussels"))
+    Results = numeric(endyear-startyear)
+    Results[] = NA
+    if (all(is.na(pixel)))
+        return(Results)
+    
+    # This is optimised for the dates that we have
+    PixelTS = bfastts(pixel, dates, type=TSType)
+    i = 1
+    for (year in startyear:(endyear-1))
+    {
+        if (year+1 == endyear)
+        {
+            ShortenedTS = PixelTS
+        } else {
+            ShortenedTS = window(PixelTS, end=year+1)
+        }
+        result = tryCatch(bfastmonitor(ShortenedTS, year),
+                          error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", toString(pixel), "\n")); return(NA)})
+        if (all(is.na(result)) || is.null(result[["breakpoint"]])) {
+            Results[i] = NA
+        } else {
+            BreakDay = yday(date_decimal(result$breakpoint)) # Fractional year, so convert to day of year
+            Results[i] = ifelse(!is.na(BreakDay), BreakDay, -9999)
+        }
+        i = i + 1
+    }
+    return(Results)
+}
+
 #timeseries = LoadTimeSeries("../../landsat78/mosaics-since2013/ndvi")
 #dates = getZ(timeseries) # This is needed in GetLastBreakInTile, otherwise data is lost; no way to get around using the environment unless we want to re-read names on each pixel process
 #tile = "X16Y06"
 #Vindex = "NDMI"
 tile = args[["tile"]]
 Vindex = args[["vegetation-index"]]
-dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
+dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/MOD_S10/")
 if (!is.null(args[["input-brick"]])) {
     timeseries = brick(args[["input-brick"]])
 } else {
-    timeseries = brick(paste0("/data/mep_cg1/MOD_S10/additional_VIs_new/", tile, "/MOD_S10_TOC_", tile, "_20090101-20171231_250m_C6_", Vindex, ".tif"))
+    tsfile = paste0("/data/mep_cg1/MOD_S10/additional_VIs_2009-2018/", tile, "/MOD_S10_TOC_", tile, "_20090101-20171231_250m_C6_", Vindex, ".tif")
+    print(paste("Using time series as input:", tsfile))
+    timeseries = brick(tsfile)
 }
 timeseries = setZ(timeseries, dates)
 
@@ -451,11 +490,17 @@ Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
 
 TSType = "10-day" # Type of time series
 Order = args[["order"]] # Which harmonic order to use
+startyear = args[["year"]]
 
 EnableFastBfast()
 #ForeachCalc(timeseries, GetLastBreakInTile, "../../landsat78/breaks/ndvi/breaks-ndvi-since2013.tif", datatype="INT2S",
 #    progress="text", options="COMPRESS=DEFLATE")
 
-SparkCalc(timeseries, GetLastBreakInTile, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, tile, paste0("breaks-order", Order, ".tif")), datatype="INT2S")#, options="COMPRESS=DEFLATE")
-
+fct = args[["fct"]]
+if (fct == "bfast") {
+    SparkCalc(timeseries, GetLastBreakInTile, file.path("/data/users/Public/greatemerald/modis/breaks-bfast-2018", Vindex, tile, paste0("breaks-order", Order, ".tif")), datatype="INT2S")#, options="COMPRESS=DEFLATE")
+} else if (fct == "bfastmonitor") {
+    SparkCalc(timeseries, BFMBreaks, file.path("/data/users/Public/greatemerald/modis/breaks-monitor", Vindex, tile, paste0("breaks-order", Order, ".tif")), datatype="INT2S")#, options="COMPRESS=DEFLATE")
+}
+    
 #SparkCalc(timeseries, GetLastBreakInTile, "../../tmp/breaks-X16Y06-order3.tif", datatype="INT2S", options="COMPRESS=DEFLATE")

@@ -28,7 +28,7 @@ parser = add_option(parser, c("-l", "--log"), type="logical", action="store_true
 parser = add_option(parser, c("-m", "--method"), type="character", default="SparkR",
                     help="Method to use for multithreading: SparkR, foreach, none. (Default: %default)", metavar="method")
 parser = add_option(parser, c("-y", "--year"), type="integer", default=2014,
-                    help="The year since which we are detecting breaks. (Default: %default)", metavar="year")
+                    help="The year from which we are detecting breaks. (Default: %default)", metavar="year")
 args = parse_args(parser)
 
 if (args[["method"]] == "SparkR")
@@ -344,11 +344,13 @@ TTestBreaks = function(pixel)
 tile = args[["tile"]]
 Vindex = args[["vegetation-index"]]
 startyear = args[["year"]]
-dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
+dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/MOD_S10/")
 if (!is.null(args[["input-brick"]])) {
     timeseries = brick(args[["input-brick"]])
 } else {
-    timeseries = brick(paste0("/data/mep_cg1/MOD_S10/additional_VIs_run04/", tile, "/MOD_S10_TOC_", tile, "_20090101-20171231_250m_C6_", Vindex, ".tif"))
+    tspath = paste0("/data/mep_cg1/MOD_S10/additional_VIs_2009-2018/", tile, "/MOD_S10_TOC_", tile, "_20090101-20171231_250m_C6_", Vindex, ".tif")
+    print(paste0("Input imagery:", tspath))
+    timeseries = brick(tspath)
 }
 timeseries = setZ(timeseries, dates)
 
@@ -357,4 +359,4 @@ Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
 
 TSType = "10-day" # Type of time series
 
-SparkCalc(timeseries, TTestBreaks, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, tile, "breaks-ttest.tif"), datatype="FLT4S", mem_usage=1024^3)#, options="COMPRESS=DEFLATE")
+SparkCalc(timeseries, TTestBreaks, file.path("/data/users/Public/greatemerald/modis/breaks", Vindex, startyear, tile, "breaks-ttest.tif"), datatype="FLT4S", mem_usage=1024^3)#, options="COMPRESS=DEFLATE")
