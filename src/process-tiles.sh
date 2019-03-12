@@ -1,8 +1,8 @@
 #!/bin/bash
 # Process a list of tiles one by one
 
-# 22Y09 23Y09
-tilesy=({03..10})
+# Stopped at X17Y03
+tilesy=({05..10})
 for i in ${tilesy[@]}; do
   for n in {15..23}; do
     tile=X${n}Y${i}
