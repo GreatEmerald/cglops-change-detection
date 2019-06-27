@@ -53,7 +53,7 @@ LoadAllReference = function()
     ValPoints = st_read("../data/ValidationPoints-December.csv", options=c("X_POSSIBLE_NAMES=sample_x", "Y_POSSIBLE_NAMES=sample_y"), stringsAsFactors = FALSE)
     st_crs(ValPoints) = 4326
     ValPoints$ChangeYear = as.integer(ValPoints$ChangeYear)
-    ValPoints$ChangeType = as.factor(ValPoints$ChangeType, levels=c("LC change", "Fire dynamics", "Water dynamics", "LC dynamics", "no LC change"))
+    ValPoints$ChangeType = factor(ValPoints$ChangeType, levels=c("LC change", "Fire dynamics", "Water dynamics", "LC dynamics", "no LC change"))
     return(ValPoints)
 }
 

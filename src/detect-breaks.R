@@ -96,7 +96,7 @@ EnableFastBfast = function()
     } else print("Using reference BFAST, install appelmar/bfast for a speed increase")
 }
 
-GetChunkSize = function(input_raster, mem_usage=0.9*1024^3, overhead_mult=9)
+GetChunkSize = function(input_raster, mem_usage=0.9*1024^3, overhead_mult=19)
 {
     # Block size: given the target memory usage, calculate how much we need
     bpp = as.integer(substr(dataType(input_raster), 4, 4))
@@ -115,13 +115,21 @@ GetChunkFilename = function(filename, identifier, length)
 }
 
 # Utility function for faster/more memory efficient cropping
-FastCrop = function(input_raster, crop_extent, filename, reference=FALSE, ...)
+# Reference: 1 means original raster-based function, 0 means gdalUtils-based, 2 means VRT-based
+# Possible to also parallelise this
+FastCrop = function(input_raster, crop_extent, filename, reference=2, ...)
 {
-    if (reference)
+    if (reference == 1)
+    {
         return(crop(input_raster, crop_extent, filename=filename, ...))
-    else
+    } else if (reference == 0) {
         return(gdalwarp(input_raster@file@name, filename, te=c(crop_extent@xmin, crop_extent@ymin, crop_extent@xmax, crop_extent@ymax),
                         output_Raster=TRUE))
+    } else {
+        #VRTFilename = sub(".tif", ".vrt", filename) # For now output VRTs with .tif extension to keep backwards compat
+        gdalbuildvrt(gdalfile = input_raster@file@name, output.vrt = filename, te = c(crop_extent@xmin, crop_extent@ymin, crop_extent@xmax, crop_extent@ymax))
+        return(brick(filename))
+    }
 }
 
 # foreach-based mc.calc
@@ -210,6 +218,8 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
         #     sink()
         #     return()
         # }
+        
+        print(paste("SparkR requested, with connectionTimeout:", as.numeric(Sys.getenv("SPARKR_BACKEND_CONNECTION_TIMEOUT", "6000"))))
         
         # Set up raster options    
         options(warn=1)
@@ -314,11 +324,15 @@ SparkCalc = function(input_raster, fx, filename, mem_usage=0.15*1024^3, datatype
     if (args[["method"]] == "SparkR")
     {
         # Workaround for a timeout bug in SparkR 1.4-2.0, fixed in 2.1
-        connectBackend.orig <- getFromNamespace('connectBackend', pos='package:SparkR')
-        connectBackend.patched <- function(hostname, port, timeout = 3600*48) {
-            connectBackend.orig(hostname, port, timeout)
-        }
-        assignInNamespace("connectBackend", value=connectBackend.patched, pos='package:SparkR')
+        #connectBackend.orig <- getFromNamespace('connectBackend', pos='package:SparkR')
+        #connectBackend.patched <- function(hostname, port, timeout = 3600*48) {
+        #    connectBackend.orig(hostname, port, timeout)
+        #}
+        #assignInNamespace("connectBackend", value=connectBackend.patched, pos='package:SparkR')
+        
+        print(paste("SparkR requested, with connectionTimeout:", as.numeric(Sys.getenv("SPARKR_BACKEND_CONNECTION_TIMEOUT", "6000"))))
+        Sys.setenv("SPARKR_BACKEND_CONNECTION_TIMEOUT" = 1209600)
+        print(paste("Reset connectionTimeout:", as.numeric(Sys.getenv("SPARKR_BACKEND_CONNECTION_TIMEOUT", "6000"))))
         
         sparkR.session()
         spark.lapply(FileIndices, scalc)
@@ -389,6 +403,15 @@ GetLastBreakInTile = function(pixel)
     # The right hand side formula calculates the columns in the bfastpp object.
     #if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
     #    return(rep(NA, length(Years)*3)) # Too many NAs
+    
+    # Return NA is we have all NA pixels
+    if (all(is.na(pixel)))
+        return(ReturnNAs())
+    
+    # Do not process pixels that have too low VI values (most likely bare soil/desert)
+    # WARNING: need to check whether the threshold makes sense for non-EVI
+    #if (mean(pixel, na.rm=TRUE) < 500)
+    #    return(ReturnNoBreak())
     
     bfts = bfastts(pixel, dates, type=TSType)
     

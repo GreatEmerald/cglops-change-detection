@@ -271,7 +271,7 @@ library(raster)
 library(bfast)
 library(strucchange)
 library(zoo)
-EVIMosaicFile = "/data/users/Public/greatemerald/modis/raw-input-mosaic-evi.vrt"
+EVIMosaicFile = "/data/users/Public/greatemerald/modis/raw-input-mosaic-EVI.vrt"
 if (!file.exists(EVIMosaicFile))
 {
     InputFiles = c("/data/mep_cg1/MOD_S10/additional_VIs_new/X16Y06/MOD_S10_TOC_X16Y06_20090101-20171231_250m_C6_EVI.tif",
@@ -309,7 +309,7 @@ if (!file.exists(NDMITSFile))
 library(lubridate)
 AC.df = AllChanged
 class(AC.df) = "data.frame"
-dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/")
+dates = GetDatesFromDir("/data/mep_cg1/MOD_S10/MOD_S10")
 plot(ChangedEVITS[1,]~dates, type="l", main=paste(1, AC.df[1,"confidence"])); abline(v=as.Date("2016-01-01")); abline(v=as.Date("2017-01-01"))
 
 # Plots
@@ -433,3 +433,54 @@ for (i in which(EVI_p_sig != NDMI_p_sig)) {
 
 MyBF = bfast(bfastts(na.approx(ChangedEVITS[1,]), dates, "10-day"), GetBreakNumber(dates), season="harmonic", max.iter=1)
 MyPlotBfast(MyBF, TRUE, ylab="EVI", main="BFAST time series segmentation")
+
+####################
+# LPS19 poster
+
+AllChangedPoints = LoadAllReference()
+DeforestationPoint = AllChangedPoints[AllChangedPoints$location_id == 2187641,]
+DeforestationTS = extract(EVIMosaic, DeforestationPoint)
+DamPoints = AllChangedPoints[AllChangedPoints$location_id %in% c(2188595, 2187772, 2188293),]
+DamTS = extract(EVIMosaic, DamPoints)
+
+poi_val = DeforestationTS[1,]
+
+plot(poi_val, type="l")
+
+poi_val = DamTS[1,]
+dates = dates[1:length(DeforestationTS)]
+bts = bfastts(poi_val, dates, type="10-day")
+bpp = bfastpp(bts, 3)
+bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
+print(bf$breakpoints)
+
+pdf("../dam-ts.pdf", width=4, height=4)
+plot(na.approx(bts)/10000, ylab="EVI", ylim=c(0, 1))
+dev.off()
+#bplm = lm(response ~ (harmon + trend), data=bpp)
+#lines(fitted(bplm)/10000~bpp$time, col="blue")
+for (i in bf$breakpoints)
+{
+    print(bpp$time[[i]])
+    abline(v=bpp$time[[i]], col="red")
+}
+
+poi_val = DeforestationTS[1,]
+dates = dates[1:length(DeforestationTS)]
+bts = bfastts(poi_val, dates, type="10-day")
+bpp = bfastpp(bts, 3)
+bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
+print(bf$breakpoints)
+
+pdf("../deforestation-ts.pdf", width=4, height=4)
+plot(na.approx(bts)/10000, ylab="EVI", ylim=c(0, 1))
+dev.off()
+#bplm = lm(response ~ (harmon + trend), data=bpp)
+#lines(fitted(bplm)/10000~bpp$time, col="blue")
+for (i in bf$breakpoints)
+{
+    print(bpp$time[[i]])
+    abline(v=bpp$time[[i]], col="red")
+}
+
+
