@@ -421,7 +421,12 @@ GetLastBreakInTile = function(pixel)
     
     bpp = bfastpp(bfts, order=Order)
     
-    if (sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))$p.value > 0.05) # If test says there should be no breaks
+    testforabreak = sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))
+    if (is.null(testforabreak) || is.null(testforabreak$p.value) || !is.finite(testforabreak$p.value)) {
+        cat("Warning: sctest did not return a valid value!\n")
+        print(str(testforabreak))
+        print(testforabreak)
+    } else if (testforabreak$p.value > 0.05) # If test says there should be no breaks
         return(ReturnNoBreak())
     
     bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
