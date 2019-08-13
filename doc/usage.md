@@ -47,7 +47,7 @@ First, option `-v` describes the vegetation index to use, one of EVI, NDMI and N
 Next, option `-o` defines the harmonic order (usually set to 3).
 Lastly, option `-t` defines the tile ID to process.
 Tile IDs are in Proba-V grid, e.g. X16Y06.
-Optional arguments include `-m` for the method selection (BFAST vs BFAST Monitor), and `--crop-only` to perform cropping but not change detection (used when doing cropping locally).
+Optional arguments include `-f` for the break detection method selection (`bfast` vs `bfastmonitor`), `-m` for the multithreading method (`spark`, `none` and `foreach`, the latter for doing local multithreading), and `--crop-only` to perform cropping but not change detection (used when doing cropping locally).
 The input and output directories are preset in the script.
 
 The script also depends on packages that implement BFAST in R.
