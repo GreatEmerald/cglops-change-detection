@@ -13,7 +13,7 @@ There are several algorithms available for land cover change detection.
 We evaluated several of those: BFAST, BFAST Monitor and t-test.
 For consolidated map production, we chose [BFAST](http://dx.doi.org/10.1016/j.rse.2009.08.014), since the algorithm is able to detect all breaks in a given time series, is more precise with the estimation of breakpoint timing, and gives an uncertainty measure about the time of the breaks.
 This allows for potential optimisation of the classifier, since knowing the time of the breaks allows avoiding training the classifier with metrics produced from unstable periods of change.
-In addition, knowing all the breaks in the time series, rather than just the most significat one, allows for more efficient consolidation, as newly incoming data is reprocessed and thus contributes to a more precise estimation of breaks in all years simultaneously.
+In addition, knowing all the breaks in the time series, rather than just the most significant one, allows for more efficient consolidation, as newly incoming data is reprocessed and thus contributes to a more precise estimation of breaks in all years simultaneously.
 This allows for updating (consolidating) previously-released land cover maps as part of the map updating process for a new year.
 
 In contrast, BFAST Monitor was designed for detecting change at the end of a time series, and thus reports only whether there was a break or not and the timing of the first break since the start of the monitoring period.
