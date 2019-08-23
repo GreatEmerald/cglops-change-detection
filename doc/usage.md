@@ -4,12 +4,25 @@
 
 # Land cover change detection
 
-## Overview
+## Overview and algorithm choice
 
 For producing yearly map updates, a change detection algorithm is needed to assess whether a given pixel is temporally stable or not.
 If it is stable, then it is desirable to keep the previous land cover classification, in order to avoid spurious changes that comes from minor changes in the input data for the classifier.
 
-In order to do so, we make use of the [BFAST algorithm](http://dx.doi.org/10.1016/j.rse.2009.08.014) to detect breaks in the time series of vegetation indices.
+There are several algorithms available for land cover change detection.
+We evaluated several of those: BFAST, BFAST Monitor and t-test.
+For consolidated map production, we chose [BFAST](http://dx.doi.org/10.1016/j.rse.2009.08.014), since the algorithm is able to detect all breaks in a given time series, is more precise with the estimation of breakpoint timing, and gives an uncertainty measure about the time of the breaks.
+This allows for potential optimisation of the classifier, since knowing the time of the breaks allows avoiding training the classifier with metrics produced from unstable periods of change.
+In addition, knowing all the breaks in the time series, rather than just the most significat one, allows for more efficient consolidation, as newly incoming data is reprocessed and thus contributes to a more precise estimation of breaks in all years simultaneously.
+This allows for updating (consolidating) previously-released land cover maps as part of the map updating process for a new year.
+
+In contrast, BFAST Monitor was designed for detecting change at the end of a time series, and thus reports only whether there was a break or not and the timing of the first break since the start of the monitoring period.
+This break is not necessarily the largest break, and only a single break is reported.
+Similarly, a t-test run over the history and compared with a monitoring period is a simple way to test whether there has been a break in the time series, however, it only indicates whether the mean of the monitoring period is different from the mean of the history period, with no indication about the time of the break.
+
+## BFAST algorithm details
+
+BFAST is used for detecting breaks in the time series of vegetation indices.
 The algorithm works by first decomposing the input (cloud-free) time series into a seasonal (harmonic: sine and cosine functions, with a defined frequency order of a year or half-year), a trend and a remainder component.
 Next, the time series is segmented into segments via piecewise linear regression, with a minimal segment size that is controlled by the parameter *h*.
 The number of breaks in the time series is optimised by iteratively minimising the Bayesian Information Criterion (BIC).
@@ -29,6 +42,32 @@ The algorithm was run on time series from MODIS 250 m Terra+Aqua reflectance pro
 The algorithm was run on three vegetation indices: NDMI, EVI and NIRv, as they result in different output that may be used complementarily.
 
 Once the breaks are determined, the output of the algorithm is then used in further processing, in combination with the classifier output and expert rules based on extra stability metrics to determine which pixels are likely to have changed.
+
+## Algorithm limitations
+
+Any algorithm based on time series analysis requires a *history* period which defines how a stable time series should look like.
+Deviations from such a stable state result in a reported break.
+As such, a long time series history is needed for the algorithm to function properly.
+Hence the algorithm is run over MODIS data, which provides a much longer history period than Proba-V.
+The downside is that the spatial resolution of MODIS data is coarser (250 m instead of 100 m).
+As such, areas of change that are smaller than the 250 m MMU cannot be detected; likewise, areas of no change within an otherwise changing MMU will also not be reported.
+To deal with this issue, it is planned to transition from MODIS to Landsat data (30 m) as the provider of the history period.
+
+Since BFAST requires a minimum segment size *h* (i.e. time between breaks) to be specified, no breaks can be detected for *h* time steps from the end of the time series.
+In our case, setting *h* to a year means that we can only detect changes one year after they happen at the earliest.
+To work around this limitation, BFAST Monitor will be used to detect breaks at the end of the time series for NRT maps, and BFAST will be used for map consolidation after a year has passed.
+
+In addition, BFAST tends to overestimate the number of breaks in the time series, as it is sensitive to relatively small variations that are caused by seasonal variability.
+To work around this limitation, we constrain the change further by combining it with classifier output (e.g. even if a break is specified, the class before and after the break may be the same, therefore the change is not considered land cover change). In addition, we combine the output with extra stability metrics and expert rules that define what class transitions are possible and which ones are not.
+
+Furthermore, while the algorithm provides uncertainly about the timing of each break, it does not provide uncertainly about the existence of the breaks.
+As an alternative, the BIC score can be used as a per-pixel metric for how well the modelled harmonics fit the actual data after it is segmented.
+However, it is a metric for all the breaks in the time series, rather than each one.
+<!--It is possible to further extract goodness-of-fit statistics for each segment, however, the breaks are defined as the transition points between the segments.-->
+
+Lastly, the BFAST algorithm is computationally intensive, much more so than BFAST Monitor or t-test.
+As such, the Terrascope computing cluster is used for computations.
+In the future, as more validation data is gathered, the optimal vegetation index can be determined and it may no longer be necessary to run the algorithm over multiple vegetation indices.
 
 ## Implementation
 
