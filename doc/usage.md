@@ -41,6 +41,13 @@ This was determined by testing the algorithm output over Sahel when using order 
 The algorithm was run on time series from MODIS 250 m Terra+Aqua reflectance product from 2009 until 2018, after calculating a number of vegetation indices from it.
 The algorithm was run on three vegetation indices: NDMI, EVI and NIRv, as they result in different output that may be used complementarily.
 
+To validate the algorithm, change validation data is being collected by IIASA and WUR, starting from Africa and scaling to the globe. Some examples of detected processes are the change in crop types (see @fig:recultivation), desertification (see @fig:desertification), wetland dryup (see @fig:dryup) and deforestation (see @fig:deforestation).
+
+![Area cultivated and cleared in 2015, then recultivated in 2016. Red lines indicate time of detected breaks.](figures/recultivation.png){#fig:recultivation}
+![Shrublands turning into bare soil. Red line indicates time of detected break.](figures/land-degradation.png){#fig:desertification}
+![Flooded area no longer flooded since 2016. Red lines indicate time of detected breaks.](figures/dryup.png){#fig:dryup}
+![Forest cut in 2016 and staying sparsely vegetated. Red line indicates time of detected break.](figures/deforestation.png){#fig:deforestation}
+
 Once the breaks are determined, the output of the algorithm is then used in further processing, in combination with the classifier output and expert rules based on extra stability metrics to determine which pixels are likely to have changed.
 
 ## Algorithm limitations
