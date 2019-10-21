@@ -576,14 +576,16 @@ InputFiles = scan(args[["input-files"]], character())
 # Hack: have to place these out of scope so that TTestBreaks() knows about dates...
 TSType = "16-day"
 Order = 3
-dates = seq.Date(from=as.Date("2009-01-01"), by=16, length.out = 230)#nlayers(input_raster))
-DateRange = range(dates)
-Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
 
 # For TS method format
 DateStart = args[["start"]]
 DateFrequency = args[["frequency"]]
 DateOffset = args[["offset"]] # How much to add to the result due to a shift from January 1; i.e. 16-day composites represent Jan 8 best
-# e.g. ts(data, start=DateStartm frequency=DateFrequency)
+
+ExampleLayer = brick(InputFiles[1])
+ExampleTS = ts(rep(NA, nlayers(ExampleLayer)), start=DateStart, frequency = DateFrequency)
+dates = as.Date(date_decimal(as.numeric(time(ExampleTS))))#seq.Date(from=as.Date("2009-01-01"), by=16, length.out = 230)#nlayers(input_raster))
+DateRange = range(dates)
+Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
 
 SparkCalc(InputFiles, BFAST0NBreaks, args[["output-dir"]], datatype="INT2S", mem_usage=1024^3)#, options="COMPRESS=DEFLATE")
