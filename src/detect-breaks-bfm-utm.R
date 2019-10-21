@@ -29,6 +29,12 @@ parser = add_option(parser, c("-m", "--method"), type="character", default="Spar
                     help="Method to use for multithreading: SparkR, foreach, none. (Default: %default)", metavar="method")
 parser = add_option(parser, c("-y", "--year"), type="integer", default=2016,
                     help="The year since which we are detecting breaks. (Default: %default)", metavar="year")
+parser = add_option(parser, c("-s", "--start"), type="integer", default=2009,
+                    help="The starting year of the input time series (Default: %default)", metavar="year")
+parser = add_option(parser, c("-f", "--frequency"), type="numeric", default=23,
+                    help="How many observations the input time series has per year (Default: %default)", metavar="observations")
+parser = add_option(parser, c("-e", "--offset"), type="integer", default=8,
+                    help="Offset from the starting day for composites (Default: %default)", metavar="days")
 args = parse_args(parser)
 
 if (args[["method"]] == "SparkR")
@@ -89,6 +95,16 @@ GetOutputFilename = function(input_raster_list, output_dir)
 {
     UTMTiles = basename(dirname(input_raster_list))
     file.path(output_dir, UTMTiles, basename(input_raster_list))
+}
+
+GetBreakNumber = function(dates)
+{
+    1/((as.numeric(difftime(max(dates), min(dates), units="weeks")))/52.18)
+}
+
+GetBreakNumberWhole = function(bfts)
+{
+    return(round(frequency(bfts)))
 }
 
 EnableFastBfast = function()
@@ -434,12 +450,140 @@ BFMBreaks = function(pixel)
     return(Results)
 }
 
+BFAST0NBreaks = function(pixel)
+{
+    t0 = as.Date("2014-01-01")
+    NoBreakValue = -9999
+    
+    # Utility functions: here so that the scope is correct for SparkR
+    BreakpointToDateSinceT0 = function(breakpoint_index, bpp, t0, offset=0)
+    {
+        result = as.integer(as.Date(date_decimal(BreakpointDate(breakpoint_index, bpp))) - t0) + offset
+        #tryCatch(
+        if (is.numeric(result) && !is.na(result) && !is.nan(result) &&
+            (result < as.integer(min(dates) - t0) || result > as.integer(max(dates) - t0)))
+        {
+            cat("Warning: breakpoint date out of valid range!\n") # -1900 to 1376
+            cat(c("Note: breakpoint index: ", breakpoint_index ,"\n"))
+            cat(c("Note: calculated days since t0: ", result ,"\n"))
+            cat(c("Note: breakpoint date: ", BreakpointDate(breakpoint_index, bpp) ,"\n"))
+        }
+        #, error=function(e){cat(c("Error: BreakpointToDateSinceT0 result is unhandleable, class: ",
+        #                           class(result), " value: ", result, "\n"))})
+        return(result)
+    }
+    
+    # DOY of breakpoint; NOTE: problems if the year doesn't match!
+    BreakpointToDOY = function(breakpoint_index, bpp)
+    {
+        result = yday(date_decimal(BreakpointDate(breakpoint_index, bpp)))
+        return(result)
+    }
+    
+    # The date of the breakpoint in decimal years
+    BreakpointDate = function(breakpoint_index, bpp)
+    {
+        if (!is.numeric(breakpoint_index) || is.nan(breakpoint_index) || is.na(breakpoint_index) ||
+            length(breakpoint_index) > 1 || breakpoint_index <= 0 || breakpoint_index > nrow(bpp))
+        {
+            cat("Warning: asked to calculate date for an invalid breakpoint index!\n")
+            cat(c("Note: The index was:", breakpoint_index, "\n"))
+            return(NA)
+        }
+        return(bpp$time[breakpoint_index])
+    }
+    
+    # Utility: In case we can't calculate anything, return NA values for all years.
+    ReturnNAs = function()
+    {
+        rep(NA, length(Years)*3)
+    }
+    # Same but if there is no break
+    ReturnNoBreak = function()
+    {
+        rep(NoBreakValue, length(Years)*3)
+    }
+    
+    # Check whether we have enough non-NA pixels for running breakpoints.full, without doing preprocessing.
+    # The right hand side formula calculates the columns in the bfastpp object.
+    #if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
+    #    return(rep(NA, length(Years)*3)) # Too many NAs
+    
+    # Return NA is we have all NA pixels
+    if (all(is.na(pixel)))
+        return(ReturnNAs())
+    
+    # Do not process pixels that have too low VI values (most likely bare soil/desert)
+    # WARNING: need to check whether the threshold makes sense for non-EVI
+    #if (mean(pixel, na.rm=TRUE) < 500)
+    #    return(ReturnNoBreak())
+    
+    #bfts = bfastts(pixel, dates, type=TSType)
+    bfts = ts(pixel, start=DateStart, frequency = DateFrequency)
+    
+    # Use integers
+    if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || GetBreakNumberWhole(bfts) >= floor(sum(!is.na(pixel))/2))
+        return(ReturnNAs()) # Too many NAs
+    
+    bpp = bfastpp(bfts, order=Order)
+    
+    testforabreak = sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))
+    if (is.null(testforabreak) || is.null(testforabreak$p.value) || !is.finite(testforabreak$p.value)) {
+        cat("Warning: sctest did not return a valid value!\n")
+        print(str(testforabreak))
+        print(testforabreak)
+    } else if (testforabreak$p.value > 0.05) # If test says there should be no breaks
+        return(ReturnNoBreak())
+    
+    bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
+                  error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", pixel, "\n")); return(NULL)})
+    
+    if (is.null(bf))
+    {
+        cat("Warning: failed to run breakpoints, returning NA!\n")
+        return(ReturnNAs())
+    }
+    
+    # Direct returns without calling functions
+    if (all(is.na(bf$breakpoints)))
+        return(ReturnNoBreak())
+    
+    # Make a matrix for the output
+    OutMatrix = matrix(NoBreakValue, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
+    ConfInts = confint(bf)$confint # Get confidence interval
+    BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
+    if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
+        cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp), "Breakpoints:", ConfInts[,"breakpoints"], "\n"))
+    #cat(c("Debug: ConfInts: ", ConfInts, "\n"))
+    BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp, t0, DateOffset) # Convert indices to days since t0
+    # The below is now handled inside the BreakpointToDateSinceT0 function
+    # if (is.list(BreakpointDays))
+    # {
+    #     cat("Warning: BreakpointDays is a list!\n")
+    #     cat(c(unlist(BreakpointDays), "\n"))
+    #     cat(c(str(BreakpointDays), "\n"))
+    #     BreakpointDays = unlist(BreakpointDays)
+    #     cat(c("Note: BreakpointYears:", BreakpointYears))
+    # }
+    #OutMatrix[rownames(OutMatrix) %in% BreakpointYears,] = BreakpointDays
+    OutMatrix[as.character(BreakpointYears),] = BreakpointDays # Put it into our matrix in the right years
+    return(c(t(OutMatrix))) # Flatten matrix
+}
+
 startyear = args[["year"]]
 InputFiles = scan(args[["input-files"]], character())
 
 # Hack: have to place these out of scope so that TTestBreaks() knows about dates...
-dates = seq.Date(from=as.Date("2014-01-26"), by=5, length.out = 306)#nlayers(input_raster))
+TSType = "16-day"
+Order = 3
+dates = seq.Date(from=as.Date("2009-01-01"), by=16, length.out = 230)#nlayers(input_raster))
 DateRange = range(dates)
 Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
 
-SparkCalc(InputFiles, BFMBreaks, args[["output-dir"]], datatype="INT2S", mem_usage=1024^3)#, options="COMPRESS=DEFLATE")
+# For TS method format
+DateStart = args[["start"]]
+DateFrequency = args[["frequency"]]
+DateOffset = args[["offset"]] # How much to add to the result due to a shift from January 1; i.e. 16-day composites represent Jan 8 best
+# e.g. ts(data, start=DateStartm frequency=DateFrequency)
+
+SparkCalc(InputFiles, BFAST0NBreaks, args[["output-dir"]], datatype="INT2S", mem_usage=1024^3)#, options="COMPRESS=DEFLATE")
