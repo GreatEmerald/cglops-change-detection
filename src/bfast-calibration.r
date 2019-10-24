@@ -21,8 +21,11 @@ LoadReferenceData = function()
 #       (Making sure to handle cases where we hae a point in multiple files!)
 # The output is a data.frame, with rows being unique points, and columns being timesteps;
 # data is the value of the vegetation index.
+# TODO: This means we also need to get the dates somehow, see 3). We can get it from a ts() with
+#       as.Date(date_decimal(as.numeric(time(ExampleTS))))
 # TODO: Can simplify the input to just a directory path and the reference points,
 #       and save the cached output with something derived from the name of the directory path.
+# TODO: Check utils/cachevi.R
 LoadVITS = function(vi="EVI", pointlocs=AllChanged, prefix="Changed", sourcedir="/data/mep_cg1/MOD_S10/additional_VIs_run04")
 {
     VITSFile = paste0("../data/", prefix, vi, "TS.csv")
@@ -124,6 +127,27 @@ TestMODttest = function(i, ChangedVITS, TargetYears=AllTargetYears, sig=0.05)
 }
 
 # 3c) BFAST Monitor
+TestMODMonitor = function(i, ChangedVITS, TargetYears=AllTargetYears, threshold=0.25, cloud_threshold=42, ...)
+{
+    MyDates = dates
+    Point1TS = ChangedVITS[i, ]
+    TargetYear = TargetYears[i]
+    if (is.na(TargetYear))
+        TargetYear = 2016
+    Observations = sum(!is.na(Point1TS))
+    print(paste("Observations for point:", Observations))
+    #plot(Point1TS~MyDates, type="l"); abline(v=as.POSIXct(as.Date("2017-01-01")))
+    if (Observations > cloud_threshold) {
+        P1TS = bfastts(Point1TS, MyDates, "10-day")
+        P1BM = bfastmonitor(P1TS, TargetYear-threshold, ...)
+        if (is.na(P1BM$breakpoint))
+            return(FALSE)
+        return(P1BM$breakpoint < TargetYear+1+threshold)
+    } else {
+        print("too cloudy")
+        return(NA)
+    }
+}
 
 # 4) Did BFAST predict a break in the given year? TRUE/FALSE.
 # BreakTimes: all breaks detected by BFAST.
