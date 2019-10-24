@@ -236,9 +236,10 @@ SparkCalc = function(input_raster_list, fx, filename, mem_usage=0.15*1024^3, dat
         if (TRUE)
         {
             tmpfilename = file.path("tmp", basename(filename))
+            GrdFilename = sub("[.]tif", ".grd", tmpfilename)
             print(paste("Calculating", input_raster_list[FileIndex], "into", filename))
             tryCatch(
-                Result <- calc(x=input_raster, fun=fx, filename=tmpfilename, datatype=datatype, options="COMPRESS=DEFLATE")
+                Result <- calc(x=input_raster, fun=fx, filename=GrdFilename, datatype=datatype, options="COMPRESS=DEFLATE")
             , error=function(e){
                 print(paste("Error writing output file", tmpfilename, e))
                 print("List of files in ./tmp:")
@@ -247,16 +248,12 @@ SparkCalc = function(input_raster_list, fx, filename, mem_usage=0.15*1024^3, dat
                 file.create("tmp/test")
                 print("List of files in ./tmp:")
                 print(list.files("tmp"))
-                #print("Trying to write an example raster:")
-                #r1 <- raster(nrows=108, ncols=21, xmn=0, xmx=10)
-                #print(r1)
-                #writeRaster(r1, filename="tmp/test.tif") # Fails
                 print("List of files in ./tmp:")
                 print(list.files("tmp"))
                 print("Result is:")
+                if (!exists("Result")) stop("Nothing to write to begin with, exiting.")
                 print(Result)
                 print("Trying to write it in GRD:")
-                GrdFilename = sub("[.]tif", ".grd", tmpfilename)
                 writeRaster(Result, filename=GrdFilename)
                 print("List of files in ./tmp:")
                 print(list.files("tmp"))
@@ -265,10 +262,12 @@ SparkCalc = function(input_raster_list, fx, filename, mem_usage=0.15*1024^3, dat
                 print("List of files in ./tmp:")
                 print(list.files("tmp"))
             })
-            cat(c("Moving file ", tmpfilename, " to ", filename, "\n"))
-            file.copy(tmpfilename, filename)
-            cat(c("Cleaning up ", tmpfilename, "\n"))
-            file.remove(tmpfilename)
+            cat(c("Translating ", GrdFilename, " to ", filename, "\n"))
+            Result = gdal_translate(GrdFilename, filename, ot=GdalDataType(datatype), verbose=TRUE, output_Raster=TRUE)
+            #cat(c("Moving file ", tmpfilename, " to ", filename, "\n"))
+            #file.copy(tmpfilename, filename)
+            cat(c("Cleaning up ", GrdFilename, "\n"))
+            file.remove(GrdFilename)
             
         } else { # Disable chunking
         for (Index in 1:length(ChunkFilenames))
@@ -370,6 +369,7 @@ SparkCalc = function(input_raster_list, fx, filename, mem_usage=0.15*1024^3, dat
     
     # Check which files don't exist and process only those chunks, so that the cluster doesn't need to spawn a VM for doing nothing
     FileIndices = which(!sapply(OutputRasters, file.exists))
+    cat("Processing ", length(FileIndices), " out of ", length(OutputRasters), " files\n")
     
     if (args[["method"]] == "SparkR")
     {
