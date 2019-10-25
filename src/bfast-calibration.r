@@ -6,9 +6,20 @@ library(sf)
 # Import the validation CSV; it contains one entry per year that gives the approximate time of the year.
 
 # 1) Load the CSV. Ideally we only need an st_read() to get an sf object
-LoadReferenceData = function()
+LoadReferenceData = function(path="../data/ValidationPoints-AfricaPriority.csv")
 {
+    Data = st_read(path, options=c("X_POSSIBLE_NAMES=x", "Y_POSSIBLE_NAMES=y"))
     
+    # Which columns are numeric
+    NumCols = c("rowid", "location_id", "sample_id", "bare", "burnt", "crops",
+        "fallow_shifting_cultivation", "grassland", "lichen_and_moss", "shrub",
+        "snow_and_ice", "tree", "urban_built_up", "water", "wetland_herbaceous",
+        "not_sure", "reference_year")
+    for (ColName in NumCols)
+    {
+        Data[[ColName]] = as.numeric(Data[[ColName]])
+    }
+    return(Data)
 }
 
 # 2) Extract time series data from the coordinates,

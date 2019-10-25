@@ -1,0 +1,9 @@
+rowid;location_id;sample_id;x;y;bare;burnt;crops;fallow_shifting_cultivation;grassland;lichen_and_moss;shrub;snow_and_ice;tree;urban_built_up;water;wetland_herbaceous;not_sure;dominant_lc;lc;forest_type;reference_year;change_season;change_at_300m
+1;1000;1070914;33;14;0;0;0;0;100;0;0;0;0;0;0;0;0;grassland;grassland;;2015;;no
+2;1000;1070914;33;14;0;100;0;0;0;0;0;0;0;0;0;0;0;burnt;burnt;;2016;JF;yes
+3;1000;1070914;33;14;0;0;100;0;0;0;0;0;0;0;0;0;0;crops;crops;;2017;MAM;yes
+4;1000;1070914;33;14;0;0;100;0;0;0;0;0;0;0;0;0;0;crops;crops;;2018;;no
+5;1003;1070917;27;-24;0;0;0;0;0;0;51;0;49;0;0;0;0;shrub;shrub;;2015;;no
+6;1003;1070917;27;-24;0;0;0;0;0;0;0;0;0;0;100;0;0;water;water;;2016;JJA;yes
+7;1003;1070917;27;-24;0;0;0;0;0;0;0;0;0;0;100;0;0;water;water;;2017;;no
+8;1003;1070917;27;-24;0;0;0;0;0;0;0;0;0;0;0;100;0;wetland_herbaceous;wetland_herbaceous;;2018;SOND;yes
