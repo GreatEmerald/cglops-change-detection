@@ -47,8 +47,9 @@ GetDates = function(...)
 # and cache it in a CSV/GPKG so that we don't need to do that again.
 # This is where we select different VIs.
 # TODO: Check the case when a point is in more than one UTM zone
-# The output is a data.frame, with rows being unique points, and columns being timesteps;
-# data is the value of the vegetation index.
+# The output is an sf data.frame, with rows being unique points,
+# and columns being timesteps, first columns being x, y, and sample_id, last being geometry.
+# Data is the value of the vegetation index.
 LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/greatemerald/modis-utm/input-vrt/", prefix="")
 {
     # Cache file. Has location_id, sample_id, x, y, geometry and the values
