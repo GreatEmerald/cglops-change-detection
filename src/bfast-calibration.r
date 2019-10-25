@@ -2,6 +2,8 @@
 # according to change validation data.
 
 library(sf)
+library(raster)
+library(lubridate)
 
 # Import the validation CSV; it contains one entry per year that gives the approximate time of the year.
 
@@ -19,41 +21,76 @@ LoadReferenceData = function(path="../data/ValidationPoints-AfricaPriority.csv")
     {
         Data[[ColName]] = as.numeric(Data[[ColName]])
     }
+    st_crs(Data) = 4326
     return(Data)
+}
+
+# Calculate dates from number of elements in the input
+# Returns a ts object
+GetTS = function(data, frequency=NULL, start=2009, years=10)
+{
+    stopifnot(is.vector(data)) # Univariate only
+    # 8-daily frequency is 46, 16-daily is 23, we have 10 years of data
+    if (is.null(frequency))
+        frequency = length(data)/years
+    return(ts(data, start=start, frequency = frequency))
+}
+
+# Returns a Date object
+GetDates = function(...)
+{
+    TS = GetTS(...)
+    return(as.Date(date_decimal(as.numeric(time(TS)))))
 }
 
 # 2) Extract time series data from the coordinates,
 # and cache it in a CSV/GPKG so that we don't need to do that again.
 # This is where we select different VIs.
-# TODO: handle UTM zones. The input files are VRTs in ~6 projection systems.
-#       We need to try and figure out which UTM zone the point is at, and then extract it.
-#       So as an input, we can use a directory that contains all these VRTs;
-#       read in each, and get from the reference data the points that fall within that image.
-#       (Making sure to handle cases where we hae a point in multiple files!)
+# TODO: Check the case when a point is in more than one UTM zone
 # The output is a data.frame, with rows being unique points, and columns being timesteps;
 # data is the value of the vegetation index.
-# TODO: This means we also need to get the dates somehow, see 3). We can get it from a ts() with
-#       as.Date(date_decimal(as.numeric(time(ExampleTS))))
-# TODO: Can simplify the input to just a directory path and the reference points,
-#       and save the cached output with something derived from the name of the directory path.
-# TODO: Check utils/cachevi.R
-LoadVITS = function(vi="EVI", pointlocs=AllChanged, prefix="Changed", sourcedir="/data/mep_cg1/MOD_S10/additional_VIs_run04")
+LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/greatemerald/modis-utm/input-vrt/", prefix="")
 {
-    VITSFile = paste0("../data/", prefix, vi, "TS.csv")
+    # Cache file. Has location_id, sample_id, x, y, geometry and the values
+    VITSFile = paste0("../data/", prefix, vi, "-TS.gpkg")
     if (!file.exists(VITSFile))
     {
-        VIMosaicFile = paste0("/data/users/Public/greatemerald/modis/raw-input-mosaic-", prefix, "-", vi, ".vrt")
-        if (!file.exists(VIMosaicFile))
+        print(paste("Cache file", VITSFile, "not found, generating..."))
+        # Deduplicate the input. We shouldn't extract from the same point more than once
+        # sample_id is unique, but also an option is to dedup on x/y
+        pointlocs = pointlocs[!duplicated(pointlocs$sample_id),]
+        
+        # Input directory that contains all our VRTs is sourcedir,
+        # inside we have VIs, and then UTM zones as VRTs
+        InputVRTs = list.files(file.path(sourcedir, vi), full.names = TRUE)
+        
+        OutDF = NULL
+        for (UTMfile in InputVRTs)
         {
-            InputFiles = list.files(sourcedir, glob2rx(paste0("MOD_S10_TOC_*_250m_C6_", vi, ".tif")), recursive = TRUE, full.names = TRUE)
-            gdalbuildvrt(InputFiles, VIMosaicFile)
+            VIMosaic = brick(UTMfile)
+            VIMosaic = setZ(VIMosaic, GetDates(1:nlayers(VIMosaic)))
+            names(VIMosaic) = GetDates(1:nlayers(VIMosaic))
+            # Reproject all points to this UTM zone
+            PointsUTM = st_transform(pointlocs, crs(VIMosaic))
+            # Which ones are inside the UTM zone?
+            PointsInZone = st_contains(st_as_sfc(st_bbox(VIMosaic)), PointsUTM)[[1]]
+            if (length(PointsInZone) <= 0)
+                next
+            # Extract those
+            ChangedVITS = extract(VIMosaic, PointsUTM[PointsInZone,])
+            # Put back into sf with orginal coords
+            OutDF = rbind(OutDF, cbind(pointlocs[PointsInZone,c("x", "y", "sample_id")], ChangedVITS))
         }
-        VIMosaic = brick(VIMosaicFile)
-        ChangedVITS = extract(VIMosaic, pointlocs)
-        write.csv(ChangedVITS, VITSFile)
-    } else ChangedVITS = as.matrix(read.csv(VITSFile, row.names=1))
-    return(ChangedVITS)
+        
+        # Finally, save to cache and not do that again
+        st_write(OutDF, VITSFile)
+    } else OutDF = st_read(VITSFile)
+    return(OutDF)
 }
+
+# Example:
+#MyEVI = LoadVITS(LoadReferenceData())
+#plot(as.integer(as.data.frame(MyEVI)[1,-c(1:3, length(MyEVI))])~GetDates(as.integer(as.data.frame(MyEVI)[1,-c(1:3, length(MyEVI))])), type="l")
 
 # 3) Run BFAST over the time series and get the detected breaks.
 # This is the function that should be optimised;
