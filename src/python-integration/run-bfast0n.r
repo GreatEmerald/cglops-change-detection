@@ -2,7 +2,7 @@
 
 library(pbapply)
 
-source("bfast0n.r")
+suppressWarnings(source("bfast0n.r"))
 EnableFastBfast()
 
 # rpy2 will put an object called "DataCube" into the environment
@@ -15,8 +15,18 @@ EnableFastBfast()
 # Function to apply the BFAST0NBreaks function onto a datacube
 # The result doesn't make sense for R (run aperm() on it to make it have sense)
 # but it does make sense in Python.
-runBFAST0N = function(DataCube, ...)
+# Using pbapply, so you get a progress bar by default. Disable it with pboptions(type="none")
+runBFAST0N = function(DataCube, ..., MissingValue=NA)
 {
+    # Replace all the missing values with NA
+    if (!is.na(MissingValue))
+        DataCube[DataCube == MissingValue] = NA
+    
     BFAST0N_result = pbapply(DataCube, c(1,2), BFAST0NBreaks, ...)
+    
+    # Replace all the NAs with the missing value
+    if (!is.na(MissingValue))
+        BFAST0N_result[is.na(BFAST0N_result)] = MissingValue
+    
     return(BFAST0N_result)
 }
