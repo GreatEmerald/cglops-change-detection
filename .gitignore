@@ -34,3 +34,5 @@ vignettes/*.pdf
 
 data/val*.csv
 data/Val*.csv
+data/training*.csv
+data/*.gpkg
