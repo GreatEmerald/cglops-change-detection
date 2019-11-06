@@ -4,6 +4,8 @@
 library(sf)
 library(raster)
 library(lubridate)
+library(strucchange)
+library(bfast)
 
 # Import the validation CSV; it contains one entry per year that gives the approximate time of the year.
 
@@ -43,6 +45,23 @@ GetDates = function(...)
     return(as.Date(date_decimal(as.numeric(time(TS)))))
 }
 
+GetDates8d = function(...)
+{
+    return(GetDates(1:460))
+}
+
+GetDates16d = function(...)
+{
+    return(GetDates(1:230))
+}
+
+# Utility to extract only the time series table from an input full sf object
+GetMatrixFromSF = function(sf)
+{
+    # Assumes 4 extra columns!
+    as.matrix(as.data.frame(sf)[, paste0("X", gsub("-", ".", GetDates(1:(ncol(sf)-4))))])
+}
+
 # 2) Extract time series data from the coordinates,
 # and cache it in a CSV/GPKG so that we don't need to do that again.
 # This is where we select different VIs.
@@ -50,11 +69,11 @@ GetDates = function(...)
 # The output is an sf data.frame, with rows being unique points,
 # and columns being timesteps, first columns being x, y, and sample_id, last being geometry.
 # Data is the value of the vegetation index.
-LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/greatemerald/modis-utm/input-vrt/", prefix="")
+LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/greatemerald/modis-utm/input-vrt/", prefix="", force=FALSE)
 {
     # Cache file. Has location_id, sample_id, x, y, geometry and the values
     VITSFile = paste0("../data/", prefix, vi, "-TS.gpkg")
-    if (!file.exists(VITSFile))
+    if (force || !file.exists(VITSFile))
     {
         print(paste("Cache file", VITSFile, "not found, generating..."))
         # Deduplicate the input. We shouldn't extract from the same point more than once
@@ -68,6 +87,7 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
         OutDF = NULL
         for (UTMfile in InputVRTs)
         {
+            print(paste("Processing", UTMfile))
             VIMosaic = brick(UTMfile)
             VIMosaic = setZ(VIMosaic, GetDates(1:nlayers(VIMosaic)))
             names(VIMosaic) = GetDates(1:nlayers(VIMosaic))
@@ -78,20 +98,45 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
             if (length(PointsInZone) <= 0)
                 next
             # Extract those
-            ChangedVITS = extract(VIMosaic, PointsUTM[PointsInZone,])
+            print(system.time(ChangedVITS <- extract(VIMosaic, PointsUTM[PointsInZone,])))
             # Put back into sf with orginal coords
             OutDF = rbind(OutDF, cbind(pointlocs[PointsInZone,c("x", "y", "sample_id")], ChangedVITS))
         }
         
         # Finally, save to cache and not do that again
-        st_write(OutDF, VITSFile)
+        st_write(OutDF, VITSFile, delete_dsn = TRUE)
     } else OutDF = st_read(VITSFile)
+    
+    NALocations = apply(GetMatrixFromSF(OutDF), 1, function(x) all(is.na(x)))
+    OutDF = OutDF[!NALocations,] # Remove all that are only NAs
+    OutDF = OutDF[!duplicated(OutDF$sample_id),] # Deduplicate
     return(OutDF)
 }
 
 # Example:
 #MyEVI = LoadVITS(LoadReferenceData())
-#plot(as.integer(as.data.frame(MyEVI)[1,-c(1:3, length(MyEVI))])~GetDates(as.integer(as.data.frame(MyEVI)[1,-c(1:3, length(MyEVI))])), type="l")
+# plot(GetDataFromSF(MyEVI)[2,]~GetDates(1:ncol(GetDataFromSF(MyEVI))), type="l")
+# bfts = GetTS(c(GetMatrixFromSF(MyEVI[2,])))
+# bf = breakpoints(formula(response~trend+harmon), data=bfastpp(bfts), h=46)
+
+RawData = LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv")
+ChangeIDs = as.data.frame(RawData)[RawData$change_at_300m == "yes","sample_id"]
+length(ChangeIDs) # 75: total number of (non-unique) change points
+length(unique(ChangeIDs)) # 62: unique change locations
+plot(RawData[RawData$change_at_300m == "yes","sample_id"]) # All Africa
+
+EVI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"))
+plot(GetMatrixFromSF(EVI_8d_16int)[1,]~GetDates8d(), type="l")
+
+EVI_8d_16int_full = merge(EVI_8d_16int, as.data.frame(RawData), "sample_id")
+ChangeIDs_UTM = as.data.frame(EVI_8d_16int_full)[EVI_8d_16int_full$change_at_300m == "yes","sample_id"]
+length(ChangeIDs_UTM) # 50: total number of points in UTM
+length(unique(ChangeIDs_UTM)) # 39: unique change locations
+length(unique(as.data.frame(EVI_8d_16int_full)[,"sample_id"])) # out of 1899
+plot(EVI_8d_16int_full[EVI_8d_16int_full$change_at_300m == "yes","sample_id"]) # UTM zones only
+
+NDMI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_8d_Int16")
+plot(GetMatrixFromSF(NDMI_8d_16int)[1,]~GetDates8d(), type="l")
 
 # 3) Run BFAST over the time series and get the detected breaks.
 # This is the function that should be optimised;
