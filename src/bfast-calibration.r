@@ -12,7 +12,14 @@ library(bfast)
 # 1) Load the CSV. Ideally we only need an st_read() to get an sf object
 LoadReferenceData = function(path="../data/ValidationPoints-AfricaPriority.csv")
 {
-    Data = st_read(path, options=c("X_POSSIBLE_NAMES=x", "Y_POSSIBLE_NAMES=y"))
+    # Normally if we have a good CSV, we just do this.
+    #Data = st_read(path, options=c("X_POSSIBLE_NAMES=x", "Y_POSSIBLE_NAMES=y"))
+    # Now our centroids are in another file, so we need to do more.
+    DataBadCoords = read.csv(path)
+    CentroidData = read.csv("../data/2019_11_06_training_data_100m.csv")
+    Data = merge(DataBadCoords, CentroidData, by.x="sample_id", by.y="sampleid")
+    Data = st_as_sf(Data, coords = c("centroid_x", "centroid_y"), dim="XY")
+    Data = Data[!is.na(Data$change_at_300m),] # Remove NAs
     
     # Which columns are numeric
     NumCols = c("rowid", "location_id", "sample_id", "bare", "burnt", "crops",
@@ -132,11 +139,14 @@ EVI_8d_16int_full = merge(EVI_8d_16int, as.data.frame(RawData), "sample_id")
 ChangeIDs_UTM = as.data.frame(EVI_8d_16int_full)[EVI_8d_16int_full$change_at_300m == "yes","sample_id"]
 length(ChangeIDs_UTM) # 50: total number of points in UTM
 length(unique(ChangeIDs_UTM)) # 39: unique change locations
-length(unique(as.data.frame(EVI_8d_16int_full)[,"sample_id"])) # out of 1899
+length(unique(as.data.frame(EVI_8d_16int_full)[,"sample_id"])) # out of 1900
 plot(EVI_8d_16int_full[EVI_8d_16int_full$change_at_300m == "yes","sample_id"]) # UTM zones only
 
-NDMI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_8d_Int16")
+NDMI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_8d_Int16", force=TRUE)
 plot(GetMatrixFromSF(NDMI_8d_16int)[1,]~GetDates8d(), type="l")
+
+NIRv_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_8d_Int16")
+plot(GetMatrixFromSF(NIRv_8d_16int)[1,]~GetDates8d(), type="l")
 
 # 3) Run BFAST over the time series and get the detected breaks.
 # This is the function that should be optimised;
@@ -156,43 +166,56 @@ plot(GetMatrixFromSF(NDMI_8d_16int)[1,]~GetDates8d(), type="l")
 # TODO: Try to add more tunables to BFAST0N
 # The output is fractional years of all detected breaks, or FALSE if none detected,
 # or NA if not enough observations/error in running the function.
-MODDetectBreaks = function(i, ChangedVITS, h = 36, start=as.Date("2009-01-01"),
-                           scrange=c(2009, 2019), scsig=0.05)
+MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="LWZ", plot=FALSE)
 {
-    MyDates = dates[dates >= start]
-    Point1TS = ChangedVITS[i, dates >= start]
-    Observations = sum(!is.na(Point1TS))
+    # The input should be a single row of a matrix.
+    InputTS = GetTS(InputTS)
+    Observations = sum(!is.na(InputTS))
     print(paste("Observations for point:", Observations))
+    h = frequency(InputTS)
     #plot(Point1TS~MyDates, type="l"); abline(v=as.POSIXct(as.Date("2017-01-01")))
-    if (Observations > h*2 && Observations > 42) {
-        P1TS = bfastts(Point1TS, MyDates, "10-day")
-        P1PP = bfastpp(P1TS, order=3)
+    if (Observations > h*2) {
+        bpp = bfastpp(InputTS, order=3)
         if (!is.null(scrange)) {
             SC = sctest(efp(response ~ (harmon + trend),
-                            data=P1PP[P1PP$time > scrange[1] & P1PP$time < scrange[2],],
+                            data=bpp[bpp$time > scrange[1] & bpp$time < scrange[2],],
                             h=h/Observations, type="OLS-MOSUM"))$p.value > scsig
             if (SC) return(FALSE)
         }
         
-        P1BP = try(breakpoints(formula(response~trend+harmon), data=P1PP, h=h))
-        #if (length(P1BP$breakpoints) > 0) {
-        #    abline(v=date_decimal(P1PP[P1BP$breakpoints, "time"]), col="red")
-        #}
-        #print(P1BP)
-        if ("try-error" %in% class(P1BP)) {
+        bp = try(breakpoints(formula(response~trend+harmon), data=bpp, h=h))
+        
+        if ("try-error" %in% class(bp)) {
             print("An error has occurred:")
-            print(P1BP)
+            print(bp)
             return(NA)
         }
-        if (all(is.na(P1BP$breakpoints)))
+        bpOptim = breakpoints(bp, breaks=breaks)
+        
+        if (plot)
+        {
+            plot(InputTS)
+            lines(fitted(bp, breaks=breaks)~bpp$time, col="green")
+            if (length(bpOptim$breakpoints) > 0) {
+                abline(v=bpp[bpOptim$breakpoints, "time"], col="red")
+            }
+        }
+        
+        if (all(is.na(bpOptim$breakpoints)))
             return(FALSE)
-        print(P1PP[P1BP$breakpoints, "time"])
-        return(P1PP[P1BP$breakpoints, "time"])
+        print(bpp[bpOptim$breakpoints, "time"])
+        return(bpp[bpOptim$breakpoints, "time"])
     } else {
         print("too cloudy")
         return(NA)
     }
 }
+
+MODDetectBreaks(GetMatrixFromSF(EVI_8d_16int)[EVI_8d_16int$sample_id == unique(ChangeIDs_UTM)[1],], breaks="LWZ", plot=TRUE)
+MODDetectBreaks(GetMatrixFromSF(NDMI_8d_16int)[NDMI_8d_16int$sample_id == unique(ChangeIDs_UTM)[1],], breaks="LWZ", plot=TRUE)
+MyBreak = MODDetectBreaks(GetMatrixFromSF(NIRv_8d_16int)[NIRv_8d_16int$sample_id == unique(ChangeIDs_UTM)[2],], breaks="BIC", plot=TRUE)
+MyReference = as.data.frame(RawData)[RawData$sample_id==unique(ChangeIDs_UTM)[2] & RawData$change_at_300m=="yes","year_fraction"]
+abline(v=MyReference, col="blue")
 
 # 3b) t-test
 TestMODttest = function(i, ChangedVITS, TargetYears=AllTargetYears, sig=0.05)
@@ -251,8 +274,8 @@ TestMODMonitor = function(i, ChangedVITS, TargetYears=AllTargetYears, threshold=
 # If there was no break for that year, and BFAST predicted one, should return FALSE.
 IsBreakInTargetYear = function(BreakTimes, TargetYear, threshold=0.25)
 {
-    if (is.na(TargetYear))
-        TargetYear = 2016 # If there is no break, we look at whether we predicted a break in 2016
+    #if (is.na(TargetYear))
+    #    TargetYear = 2016 # If there is no break, we look at whether we predicted a break in 2016
     # TODO: Needs to be updated; previously, lack of break meant that the break time would be set to NA,
     # but now it's no longer the case, it's change_at_300m = FALSE and reference_year=<year>
     return(any(BreakTimes > TargetYear - threshold & BreakTimes < TargetYear+1+threshold))
@@ -265,6 +288,8 @@ VectorisedIsBreakInTargetYear = function(BreakList, threshold=0.25, TY=TargetYea
     i = 1:length(BreakList)
     return(sapply(i, function(i){return(IsBreakInTargetYear(BreakList[[i]], TY[i], threshold=threshold))}))
 }
+
+IsBreakInTargetYear(MyBreak, MyReference)
 
 # 4c) Wrapper for running 3+4 in one.
 # Result is a logical vector saying how many times we accurately predicted a break,
