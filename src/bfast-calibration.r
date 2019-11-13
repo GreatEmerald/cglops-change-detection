@@ -6,6 +6,10 @@ library(raster)
 library(lubridate)
 library(strucchange)
 library(bfast)
+library(foreach)
+library(doParallel)
+
+source("utils/enable_fast_bfast.r")
 
 # Import the validation CSV; it contains one entry per year that gives the approximate time of the year.
 
@@ -65,8 +69,9 @@ GetDates16d = function(...)
 # Utility to extract only the time series table from an input full sf object
 GetMatrixFromSF = function(sf)
 {
-    # Assumes 4 extra columns!
-    as.matrix(as.data.frame(sf)[, paste0("X", gsub("-", ".", GetDates(1:(ncol(sf)-4))))])
+    # Assumes that the pattern of columns is XNNNN.NN.NN
+    TSNames = grep(glob2rx("X????.??.??"), names(sf), value = TRUE)
+    as.matrix(as.data.frame(sf)[, TSNames])
 }
 
 # 2) Extract time series data from the coordinates,
@@ -105,7 +110,7 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
             if (length(PointsInZone) <= 0)
                 next
             # Extract those
-            print(system.time(ChangedVITS <- extract(VIMosaic, PointsUTM[PointsInZone,])))
+            print(system.time(ChangedVITS <- extract(VIMosaic, PointsUTM[PointsInZone,]))) # method="bilinear" takes too much RAM
             # Put back into sf with orginal coords
             OutDF = rbind(OutDF, cbind(pointlocs[PointsInZone,c("x", "y", "sample_id")], ChangedVITS))
         }
@@ -118,6 +123,12 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
     OutDF = OutDF[!NALocations,] # Remove all that are only NAs
     OutDF = OutDF[!duplicated(OutDF$sample_id),] # Deduplicate
     return(OutDF)
+}
+
+# Merge the matrix of unique points with the reference data, to get all years info
+MergeAllYears = function(df, data)
+{
+    return(merge(df, as.data.frame(data), "sample_id"))
 }
 
 # Example:
@@ -135,18 +146,29 @@ plot(RawData[RawData$change_at_300m == "yes","sample_id"]) # All Africa
 EVI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"))
 plot(GetMatrixFromSF(EVI_8d_16int)[1,]~GetDates8d(), type="l")
 
-EVI_8d_16int_full = merge(EVI_8d_16int, as.data.frame(RawData), "sample_id")
+EVI_8d_16int_full = MergeAllYears(EVI_8d_16int, RawData)
 ChangeIDs_UTM = as.data.frame(EVI_8d_16int_full)[EVI_8d_16int_full$change_at_300m == "yes","sample_id"]
 length(ChangeIDs_UTM) # 50: total number of points in UTM
 length(unique(ChangeIDs_UTM)) # 39: unique change locations
 length(unique(as.data.frame(EVI_8d_16int_full)[,"sample_id"])) # out of 1900
 plot(EVI_8d_16int_full[EVI_8d_16int_full$change_at_300m == "yes","sample_id"]) # UTM zones only
 
-NDMI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_8d_Int16", force=TRUE)
+NDMI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_8d_Int16")
+NDMI_8d_16int_full = MergeAllYears(NDMI_8d_16int, RawData)
 plot(GetMatrixFromSF(NDMI_8d_16int)[1,]~GetDates8d(), type="l")
 
+NDMI_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_16d_Int16", force=TRUE)
+NDMI_16d_16int_full = MergeAllYears(NDMI_16d_16int, RawData)
+
 NIRv_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_8d_Int16")
+NIRv_8d_16int_full = MergeAllYears(NIRv_8d_16int, RawData)
 plot(GetMatrixFromSF(NIRv_8d_16int)[1,]~GetDates8d(), type="l")
+
+NIRv_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Int16", force=TRUE)
+NIRv_16d_16int_full = MergeAllYears(NIRv_16d_16int, RawData)
+
+NIRv_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Int16", force=TRUE)
+NIRv_16d_16int_full = MergeAllYears(NIRv_16d_16int, RawData)
 
 # 3) Run BFAST over the time series and get the detected breaks.
 # This is the function that should be optimised;
@@ -166,21 +188,21 @@ plot(GetMatrixFromSF(NIRv_8d_16int)[1,]~GetDates8d(), type="l")
 # TODO: Try to add more tunables to BFAST0N
 # The output is fractional years of all detected breaks, or FALSE if none detected,
 # or NA if not enough observations/error in running the function.
-MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="LWZ", plot=FALSE)
+MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="LWZ", sctype="OLS-MOSUM", plot=FALSE, quiet=FALSE)
 {
     # The input should be a single row of a matrix.
     InputTS = GetTS(InputTS)
     Observations = sum(!is.na(InputTS))
-    print(paste("Observations for point:", Observations))
+    if (!quiet)
+        print(paste("Observations for point:", Observations))
     h = frequency(InputTS)
-    #plot(Point1TS~MyDates, type="l"); abline(v=as.POSIXct(as.Date("2017-01-01")))
     if (Observations > h*2) {
         bpp = bfastpp(InputTS, order=3)
         if (!is.null(scrange)) {
             SC = sctest(efp(response ~ (harmon + trend),
                             data=bpp[bpp$time > scrange[1] & bpp$time < scrange[2],],
-                            h=h/Observations, type="OLS-MOSUM"))$p.value > scsig
-            if (SC) return(FALSE)
+                            h=h/Observations, sctype=type))$p.value > scsig
+            if (!is.null(SC) && !is.na(SC) && SC) return(FALSE)
         }
         
         bp = try(breakpoints(formula(response~trend+harmon), data=bpp, h=h))
@@ -203,7 +225,8 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
         
         if (all(is.na(bpOptim$breakpoints)))
             return(FALSE)
-        print(bpp[bpOptim$breakpoints, "time"])
+        if (!quiet)
+            print(bpp[bpOptim$breakpoints, "time"])
         return(bpp[bpOptim$breakpoints, "time"])
     } else {
         print("too cloudy")
@@ -213,9 +236,8 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
 
 MODDetectBreaks(GetMatrixFromSF(EVI_8d_16int)[EVI_8d_16int$sample_id == unique(ChangeIDs_UTM)[1],], breaks="LWZ", plot=TRUE)
 MODDetectBreaks(GetMatrixFromSF(NDMI_8d_16int)[NDMI_8d_16int$sample_id == unique(ChangeIDs_UTM)[1],], breaks="LWZ", plot=TRUE)
-MyBreak = MODDetectBreaks(GetMatrixFromSF(NIRv_8d_16int)[NIRv_8d_16int$sample_id == unique(ChangeIDs_UTM)[2],], breaks="BIC", plot=TRUE)
-MyReference = as.data.frame(RawData)[RawData$sample_id==unique(ChangeIDs_UTM)[2] & RawData$change_at_300m=="yes","year_fraction"]
-abline(v=MyReference, col="blue")
+MODDetectBreaks(GetMatrixFromSF(NIRv_16d_16int)[NIRv_16d_16int$sample_id == unique(ChangeIDs_UTM)[1],], breaks="LWZ", plot=TRUE)
+MODDetectBreaks(GetMatrixFromSF(NIRv_16d_16int)[NIRv_16d_16int$sample_id == unique(ChangeIDs_UTM)[1],], breaks="BIC", plot=TRUE)
 
 # 3b) t-test
 TestMODttest = function(i, ChangedVITS, TargetYears=AllTargetYears, sig=0.05)
@@ -272,7 +294,7 @@ TestMODMonitor = function(i, ChangedVITS, TargetYears=AllTargetYears, threshold=
 # Threshold: how much fuzziness is allowed to still consider a break detected.
 # This function needs to be run for every year and every point.
 # If there was no break for that year, and BFAST predicted one, should return FALSE.
-IsBreakInTargetYear = function(BreakTimes, TargetYear, threshold=0.25)
+IsBreakInTargetYear = function(BreakTimes, TargetYear, threshold=0.5)
 {
     #if (is.na(TargetYear))
     #    TargetYear = 2016 # If there is no break, we look at whether we predicted a break in 2016
@@ -283,61 +305,274 @@ IsBreakInTargetYear = function(BreakTimes, TargetYear, threshold=0.25)
 
 # 4b) Vectorised version (takes a list of MODDetectBreaks() output and a column of target years)
 # Returns a column of whether BFSAT predicted the break at that time or not.
-VectorisedIsBreakInTargetYear = function(BreakList, threshold=0.25, TY=TargetYears)
+VectorisedIsBreakInTargetYear = function(BreakList, threshold=0.5, TY=TargetYears)
 {
     i = 1:length(BreakList)
     return(sapply(i, function(i){return(IsBreakInTargetYear(BreakList[[i]], TY[i], threshold=threshold))}))
 }
 
+MyBreak = MODDetectBreaks(GetMatrixFromSF(NIRv_8d_16int)[NIRv_8d_16int$sample_id == unique(ChangeIDs_UTM)[2],], breaks="BIC", plot=TRUE)
+MyReference = as.data.frame(RawData)[RawData$sample_id==unique(ChangeIDs_UTM)[2] & RawData$change_at_300m=="yes","year_fraction"]
+abline(v=MyReference, col="blue")
 IsBreakInTargetYear(MyBreak, MyReference)
 
 # 4c) Wrapper for running 3+4 in one.
 # Result is a logical vector saying how many times we accurately predicted a break,
 # and how many times not. One value per year.
-TestMODBreakpointDetection = function(i, threshold=0.25, TargetYears=TargetYears, ...)
+# VITS is the full VI TS, all years should be there.
+TestMODBreakpointDetection = function(VITS, threshold=0.5, TargetYears=TargetYears, ...)
 {
-    BreakTimes = MODDetectBreaks(i, ...)
-    TargetYear = TargetYears[i]
-    if (is.na(BreakTimes[1])) return(NA)
-    # If MODDetectBreaks returned FALSE, we also return FALSE: no breaks were detected
-    if (!BreakTimes[1]) return(FALSE)
-    return(IsBreakInTargetYear(BreakTimes, TargetYear, threshold))
+    # Output into a new column
+    VITS$bfast_guess = NA
+    
+    pbi = 0
+    pb = txtProgressBar(pbi, length(unique(VITS$sample_id)), style = 3)
+    # Detect the breaks in a loop over unique points (don't want to run bfast multiple times)
+    for (i in unique(VITS$sample_id))
+    {
+        SampleMatrix = GetMatrixFromSF(VITS[VITS$sample_id == i,])
+        BreakTimes = MODDetectBreaks(SampleMatrix[1,], ..., quiet=TRUE)
+        
+        pbi = pbi + 1
+        setTxtProgressBar(pb, pbi)
+        
+        if (length(BreakTimes) < 2 && is.na(BreakTimes))
+            next # Already set to NA
+        for (year in as.data.frame(VITS)[VITS$sample_id == i,"year_fraction"])
+        {
+            VITS[VITS$sample_id == i & VITS$year_fraction == year, "bfast_guess"] = IsBreakInTargetYear(BreakTimes, year, threshold)
+        }
+    }
+    close(pb)
+    
+    return(VITS)
 }
 
-# 5) Get statistics. 
-# TODO: Update with the current CSV scheme.
-# TODO: Should take two inputs: BFAST predictions and truth.
-FPStats = function(IsBreakInTargetYear, uncertain=TRUE)
+EVI_8d_16int_defaults = TestMODBreakpointDetection(EVI_8d_16int_full[EVI_8d_16int_full$sample_id %in% ChangeIDs_UTM,], breaks="BIC", plot=FALSE)
+EVI_8d_16int_LWZ = TestMODBreakpointDetection(EVI_8d_16int_full[EVI_8d_16int_full$sample_id %in% ChangeIDs_UTM,], breaks="LWZ", plot=FALSE)
+NDMI_8d_16int_defaults = TestMODBreakpointDetection(NDMI_8d_16int_full[NDMI_8d_16int_full$sample_id %in% ChangeIDs_UTM,], breaks="BIC", plot=FALSE)
+NDMI_8d_16int_LWZ = TestMODBreakpointDetection(NDMI_8d_16int_full[NDMI_8d_16int_full$sample_id %in% ChangeIDs_UTM,], breaks="LWZ", plot=FALSE)
+NIRv_8d_16int_defaults = TestMODBreakpointDetection(NIRv_8d_16int_full[NIRv_8d_16int_full$sample_id %in% ChangeIDs_UTM,], breaks="BIC", plot=FALSE)
+NIRv_8d_16int_LWZ = TestMODBreakpointDetection(NIRv_8d_16int_full[NIRv_8d_16int_full$sample_id %in% ChangeIDs_UTM,], breaks="LWZ", plot=FALSE)
+
+# 5) Get statistics.
+FPStats = function(predictions, truth = NULL)
 {
-    # ChangePoints is TRUE if there was a change that year, FALSE if no change.
-    ChangePoints = AllPoints$ChangeType != "no LC change"
-    if (!uncertain) # We may filter out if it's uncertain (NAs are ignored)
-        ChangePoints[AllPoints$confidence == "-1"] = NA
-    # We predicted a break (IsBreakInTargetYear == TRUE) and it was a break (ChangePoints == TRUE)
-    TruePositiveCount = sum(IsBreakInTargetYear[ChangePoints], na.rm=TRUE)
-    # We predicted a break but htere wasn't one
-    FalsePositiveCount = sum(IsBreakInTargetYear[!ChangePoints], na.rm=TRUE)
+    # If we get a data.frame, try to automagically determine what is predicted and what is true
+    if (is.data.frame(predictions))
+    {
+        truth = predictions$change_at_300m == "yes"
+        predictions = predictions$bfast_guess
+    }
+    
+    # We predicted a break and it was a break
+    TruePositiveCount = sum(predictions & truth, na.rm=TRUE)
+    # We predicted a break but there wasn't one (overprediction)
+    FalsePositiveCount = sum(predictions & !truth, na.rm=TRUE)
     # We predicted no break, and there were none
-    TrueNegativeCount = sum(!IsBreakInTargetYear[!ChangePoints], na.rm=TRUE)
-    # We predicted no break, but there was one
-    FalseNegativeCount = sum(!IsBreakInTargetYear[ChangePoints], na.rm=TRUE)
+    TrueNegativeCount = sum(!predictions & !truth, na.rm=TRUE)
+    # We predicted no break, but there was one (we missed it)
+    FalseNegativeCount = sum(!predictions & truth, na.rm=TRUE)
     # Percent of true positives out of all change
-    TruePositiveRate = TruePositiveCount / sum(ChangePoints, na.rm=TRUE) # AKA Sensitivity
+    TruePositiveRate = TruePositiveCount / sum(truth, na.rm=TRUE) # AKA Sensitivity
     Specificity = TrueNegativeCount / (TrueNegativeCount + FalsePositiveCount)
     # Percent of false positive out of no change
-    FalsePositiveRate = FalsePositiveCount / sum(!ChangePoints, na.rm=TRUE) # False positive rate or alpha or p-value or Type I Error
+    FalsePositiveRate = FalsePositiveCount / sum(!truth, na.rm=TRUE) # False positive rate or alpha or p-value or Type I Error
     SignalToNoise = TruePositiveCount / FalsePositiveCount
     SignalToNoiseRate = TruePositiveRate / FalsePositiveRate # Likelihood Ratio for Positive Tests
     PositivePredictiveValue = TruePositiveCount / (TruePositiveCount + FalsePositiveCount)
-    Accuracy = (TruePositiveCount + TrueNegativeCount) / length(ChangePoints)
+    Accuracy = (TruePositiveCount + TrueNegativeCount) / length(truth)
     return(data.frame(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount,
                       TruePositiveRate, Specificity, FalsePositiveRate, SignalToNoise, SignalToNoiseRate,
                       PositivePredictiveValue, Accuracy))
 }
 
+FPStats(EVI_8d_16int_defaults)
+FPStats(EVI_8d_16int_LWZ) # Better positive predictive value
+FPStats(NDMI_8d_16int_defaults)
+FPStats(NDMI_8d_16int_LWZ)
+FPStats(NIRv_8d_16int_defaults)
+FPStats(NIRv_8d_16int_LWZ)
+
 # TODO: test different VIs. Change input to LoadVITS, select which one works best (first under defaults).
+TestVIs = function(VIs, ...)
+{
+    #Result = NULL
+    #for (vi in VIs)
+    Result = foreach(vi = VIs, .combine=rbind, .multicombine = TRUE, .verbose=TRUE) %dopar%
+    {
+        VI = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), vi)
+        VI_full = MergeAllYears(VI, RawData)
+        # Filter out 2015 and 2018, former can't change and latter can't be detected
+        VI_full = VI_full[VI_full$reference_year %in% 2016:2017,]
+        # Filter out burnt areas
+        # IDs to filter out
+        BurntIDs = GetBurntIDs(VI_full)
+        BurntIDs = BurntIDs[!BurntIDs %in% ChangeIDs_UTM] # Do not exclude IDs that have changed
+        VI_full = VI_full[!VI_full$sample_id %in% BurntIDs,] # Exclude burnt areas
+        
+        VI_full = TestMODBreakpointDetection(VI_full, plot=FALSE, ...)
+        VI_full$changed = VI_full$change_at_300m == "yes"
+        VI_full$vi = vi
+        VI_full[,c("sample_id", "year_fraction", "changed", "bfast_guess", "vi")]
+    }
+    return(Result)
+}
+
+registerDoParallel(cores = 4)
+# This runs with LWZ
+VIResult = TestVIs(c(
+    "EVI_16d_Int16", "EVI_8d_Int16", "NDMI_16d_Int16", "NDMI_8d_Int16",
+    "NIRv_16d_Byte", "NIRv_16d_Int16", "NIRv_8d_Byte", "NIRv_8d_Int16")
+    )
+FPStats(VIResult[VIResult$vi=="EVI_16d_Int16",]$bfast_guess, VIResult[TestResult$vi=="EVI_16d_Int16",]$changed)
+
+# Get a table of all statistics
+tapply(1:nrow(VIResult), VIResult$vi, function(x)FPStats(VIResult[x,]$bfast_guess, VIResult[x,]$changed))
+
+# Test with BIC
+BICResult = TestVIs(c("EVI_16d_Int16", "NDMI_16d_Int16", "NIRv_16d_Byte", "NIRv_16d_Int16"), breaks="BIC")
+tapply(1:nrow(BICResult), BICResult$vi, function(x)FPStats(BICResult[x,]$bfast_guess, BICResult[x,]$changed))
+
+# Filter out burnt area pixels
+# Only needed for the time being
+
+PreprocessBurnt = function()
+{
+    # Stack 2016 and 2017
+    BurntFiles = list.files("../data", pattern = glob2rx("Stratification_Season_WATER-BA-MASK_Africa_201*.tif"), full.names = TRUE)
+    BurntStack = stack(BurntFiles)
+    # We only care about burnt, so drop the other layers
+    BurntStack = dropLayer(BurntStack, c(1,3))
+    # Crop to our area
+    BurntStack = crop(BurntStack, EVI_8d_16int)
+    # This is terribly slow, so use a VRT
+    system(paste("gdalbuildvrt -b 2 -separate ../data/burnt.vrt", paste(BurntFiles, collapse=" ")))
+    BurntStack = brick("../data/burnt3.vrt")
+    # Replace values so that 0 is not burnt and 1 is burnt, and
+    # Combine both together
+    BurntLayer = calc(BurntStack, function(x){ x[is.na(x)] = 0; x[x==255] = 0; x[1] | x[2] }, progress="text")
+    # Still takes forever, so instead do two gadlbuildvrts without -separate, to set 255 and 0 to NA
+    # and then to set no NA to have it set to 0, then gdalwarp to not have R crash
+    BurntLayer = raster("../data/burnt3.tif")
+    # Pixels are 100m, whereas we are concerned with 300m, so run a filter
+    Burnt300m = focal(BurntLayer, w=matrix(1,3,3), fun=modal, filename="../data/burnt-mask.tif", progress="text", options=c("COMPRESS=DEFLATE", "NUM_THREADS=4"))
+    # ...which is again too slow, so use r.neighbours from GRASS
+    Burnt300m = raster("../data/burnt-grass.tif")
+    return(Burnt300m)
+}
+
+GetBurntIndices = function(df, burnt=raster("../data/burnt-grass.tif"))
+{
+    return(which(as.logical(extract(burnt, df))))
+}
+
+GetBurntVector = function(df, burnt=raster("../data/burnt-grass.tif"))
+{
+    return(as.logical(extract(burnt, df)))
+}
+
+GetBurntIDs = function(df, burnt=raster("../data/burnt-grass.tif"))
+{
+    return(df$sample_id[as.logical(extract(burnt, df))])
+}
+
+EVI_unburnt = EVI_8d_16int_full[-GetBurntIndices(EVI_8d_16int_full),]
+ChangeIDs_UTM_unburnt = as.data.frame(EVI_unburnt)[EVI_unburnt$change_at_300m == "yes","sample_id"]
+length(unique(ChangeIDs_UTM_unburnt)) # 32
+IDs_burnt = GetBurntIDs(EVI_8d_16int_full)
 
 # TODO: make an optimisation routine where we run BFAST with different parameters,
 # get statistics and choose the best values based on the statistics. Maybe using optim().
 # Caveat that if we do it automatically, we may run into edge cases,
 # i.e. all NA and one correct break + one correct no break is best.
+
+BICResult = TestVIs(c("EVI_16d_Int16", "NDMI_16d_Int16", "NIRv_16d_Byte", "NIRv_16d_Int16"), breaks="BIC")
+tapply(1:nrow(BICResult), BICResult$vi, function(x)FPStats(BICResult[x,]$bfast_guess, BICResult[x,]$changed))
+
+# ParamLists is a list of lists of parameter and value pairs
+TestParams = function(ParamLists, vi)
+{
+    Result = foreach(ParamList = ParamLists, .combine=rbind, .multicombine = TRUE, .verbose=TRUE) %dopar%
+    {
+        VI = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), vi)
+        VI_full = MergeAllYears(VI, RawData)
+        rm(VI)
+        # Filter out 2015 and 2018, former can't change and latter can't be detected
+        VI_full = VI_full[VI_full$reference_year %in% 2016:2017,]
+        # Filter out burnt areas
+        # IDs to filter out
+        BurntIDs = GetBurntIDs(VI_full)
+        BurntIDs = BurntIDs[!BurntIDs %in% ChangeIDs_UTM] # Do not exclude IDs that have changed
+        VI_full = VI_full[!VI_full$sample_id %in% BurntIDs,] # Exclude burnt areas
+        
+        callstring = paste(names(ParamList), ParamList, collapse=", ")
+        ParamList$plot = FALSE
+        ParamList$VITS = VI_full
+        rm(VI_full)
+        gc()
+        Result = do.call("TestMODBreakpointDetection", ParamList)
+        Result$changed = Result$change_at_300m == "yes"
+        Result$vi = as.factor(vi) # Just for reference
+        Result$call = callstring
+        Result[,c("sample_id", "year_fraction", "changed", "bfast_guess", "call", "vi")]
+    }
+    return(Result)
+}
+
+SCTestTest = TestParams(list(
+    list(breaks="LWZ", scsig=0.25), # Sensitivity 0.44, specificity 0.90, a bit better
+    list(breaks="LWZ", scsig=0.75), # Sensitivity 0.44, specificity 0.90
+    list(breaks="BIC", scsig=0.01), # Sensitivity 0.56, specificity 0.39, a bit better
+    list(breaks="BIC", scsig=0.001) # All non-break
+    ), "NIRv_16d_Byte")
+tapply(1:nrow(SCTestTest), SCTestTest$call, function(x)FPStats(SCTestTest[x,]$bfast_guess, SCTestTest[x,]$changed))
+
+SCTestTest = TestParams(list(
+    list(breaks="LWZ", scsig=0.15), # Sensitivity 0.41, specificity 0.90, worse than p<0.25
+    list(breaks="BIC", scsig=0.005), # All non-break
+    list(breaks="BIC", scsig=0.007), # All non-break
+    list(breaks="BIC", scsig=0.003) # All non-break
+), "NIRv_16d_Byte")
+tapply(1:nrow(SCTestTest), SCTestTest$call, function(x)FPStats(SCTestTest[x,]$bfast_guess, SCTestTest[x,]$changed))
+
+# Try scrange
+
+SCRangeTest = TestParams(list(
+    list(breaks="LWZ", scrange=c(2015, 2019)), # Sensitivity 0.29, specificity 0.94, misses a lot
+    list(breaks="BIC", scrange=c(2015, 2019))  # Sensitivity 0.44, specificity 0.60, it's a bad version of LWZ
+), "NIRv_16d_Byte")
+
+Result = SCRangeTest
+tapply(1:nrow(Result), Result$call, function(x)FPStats(Result[x,]$bfast_guess, Result[x,]$changed))
+
+SCRangeTest = TestParams(list(
+    list(breaks="LWZ", scrange=c(2016, 2018)), # Sensitivity 0.29, specificity 0.95, misses a lot
+    list(breaks="BIC", scrange=c(2016, 2018))  # Sensitivity 0.32, specificity 0.66, even worse
+), "NIRv_16d_Byte")
+
+Result = SCRangeTest
+tapply(1:nrow(Result), Result$call, function(x)FPStats(Result[x,]$bfast_guess, Result[x,]$changed))
+
+# Try different test types
+
+SCTypeTest = TestParams(list(
+    list(breaks="LWZ", sctype="Rec-CUSUM") # Sensitivity 0.38, specificity 0.94, it's even more specific
+    ,list(breaks="BIC", sctype="Rec-CUSUM") # Sensitivity 0.47, specificity 0.62, better than limiting the range
+), "NIRv_16d_Byte")
+
+Result = SCTypeTest
+tapply(1:nrow(Result), Result$call, function(x)FPStats(Result[x,]$bfast_guess, Result[x,]$changed))
+
+SCTypeTest = TestParams(list(
+    list(breaks="LWZ", sctype="RE") # Sensitivity 0.38, specificity 0.94, no change
+    ,list(breaks="BIC", sctype="RE") # Sensitivity 0.47, specificity 0.62, no change
+), "NIRv_16d_Byte")
+
+Result = SCTypeTest
+tapply(1:nrow(Result), Result$call, function(x)FPStats(Result[x,]$bfast_guess, Result[x,]$changed))
+
+SCTypeTest = TestParams(list(
+    list(breaks="LWZ", sctype="Score-CUSUM") # Sensitivity 0.38, specificity 0.94, no change
+    ,list(breaks="BIC", sctype="Score-CUSUM") # Sensitivity 0.47, specificity 0.62, no change
+), "NIRv_16d_Byte")

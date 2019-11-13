@@ -29,7 +29,7 @@ MyPlotBfast = function(MyBF, PlotData=TRUE, ...)
 # Plot a given time series (pixel values) and return a breakpoint object
 # 'bfast' controls whether the whole BFAST is calculated, or just the breakpoints
 visualise_breakpoints = function(pixel, order=3, timestep="10-day", dates=NULL,
-                                 t0=as.Date("2014-03-12"), bfast=FALSE, approxna=FALSE, ...)
+                                 t0=as.Date("2014-03-12"), bfast=FALSE, approxna=FALSE, breaks=NULL, ...)
 {
     if (approxna)
         pixel = na.approx(pixel)
@@ -51,7 +51,7 @@ visualise_breakpoints = function(pixel, order=3, timestep="10-day", dates=NULL,
     #plot(read.zoo(bpp))
     if (!bfast)
     {
-        bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates))
+        bf = breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), breaks=breaks)
         #print(paste("Breakpoints:", toString(bf$breakpoints)))
         #print(paste("Times:", toString(bpp$time[[max(bf$breakpoints)]])))
         #print(as.integer(as.Date(bpp$time[[max(bf$breakpoints)]]) - t0)) ## Gives NA for irregular because dates do not correspond to bpp$trend in this case
