@@ -157,18 +157,18 @@ NDMI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_
 NDMI_8d_16int_full = MergeAllYears(NDMI_8d_16int, RawData)
 plot(GetMatrixFromSF(NDMI_8d_16int)[1,]~GetDates8d(), type="l")
 
-NDMI_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_16d_Int16", force=TRUE)
+NDMI_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_16d_Int16")
 NDMI_16d_16int_full = MergeAllYears(NDMI_16d_16int, RawData)
 
 NIRv_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_8d_Int16")
 NIRv_8d_16int_full = MergeAllYears(NIRv_8d_16int, RawData)
 plot(GetMatrixFromSF(NIRv_8d_16int)[1,]~GetDates8d(), type="l")
 
-NIRv_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Int16", force=TRUE)
+NIRv_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Int16")
 NIRv_16d_16int_full = MergeAllYears(NIRv_16d_16int, RawData)
 
-NIRv_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Int16", force=TRUE)
-NIRv_16d_16int_full = MergeAllYears(NIRv_16d_16int, RawData)
+NIRv_16d_byte = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Byte")
+NIRv_16d_byte_full = MergeAllYears(NIRv_16d_byte, RawData)
 
 # 3) Run BFAST over the time series and get the detected breaks.
 # This is the function that should be optimised;
@@ -536,6 +536,16 @@ SCTestTest = TestParams(list(
 ), "NIRv_16d_Byte")
 tapply(1:nrow(SCTestTest), SCTestTest$call, function(x)FPStats(SCTestTest[x,]$bfast_guess, SCTestTest[x,]$changed))
 
+LWZSubset = SCTestTest[SCTestTest$call == "breaks LWZ, scsig 0.15",]
+FNSamples = unique(LWZSubset[LWZSubset$changed & !LWZSubset$bfast_guess,]$sample_id)
+for (i in 1:length(FNSamples))
+{
+    MODDetectBreaks(c(GetMatrixFromSF(NIRv_16d_byte[NIRv_16d_byte$sample_id == FNSamples[i],])), scrange=NULL, plot=TRUE)
+    abline(v=LWZSubset[LWZSubset$changed & LWZSubset$sample_id == FNSamples[i],]$year_fraction, col="blue")
+    title(FNSamples[i])
+} # 1363551 is a mismatch of break definition
+# A lot of cases like 1363169 will get detected properly in the future
+
 # Try scrange
 
 SCRangeTest = TestParams(list(
@@ -576,3 +586,14 @@ SCTypeTest = TestParams(list(
     list(breaks="LWZ", sctype="Score-CUSUM") # Sensitivity 0.38, specificity 0.94, no change
     ,list(breaks="BIC", sctype="Score-CUSUM") # Sensitivity 0.47, specificity 0.62, no change
 ), "NIRv_16d_Byte")
+
+Result = SCTypeTest
+tapply(1:nrow(Result), Result$call, function(x)FPStats(Result[x,]$bfast_guess, Result[x,]$changed))
+
+SCTypePTest = TestParams(list(
+    list(breaks="BIC", sctype="Rec-CUSUM", scsig=0.2) # Sensitivity 0.53, specificity 0.46, balanced but still not great, similar to OLS-MOSUM with 0.01
+    ,list(breaks="BIC", sctype="Rec-CUSUM", scsig=0.1) # Sensitivity 0.47, specificity 0.55, worse
+), "NIRv_16d_Byte")
+
+Result = SCTypePTest
+tapply(1:nrow(Result), Result$call, function(x)FPStats(Result[x,]$bfast_guess, Result[x,]$changed))
