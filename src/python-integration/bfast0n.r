@@ -109,7 +109,7 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     } else if (testforabreak$p.value > 0.05) # If test says there should be no breaks
         return(ReturnNoBreak())
     
-    bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
+    bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts), breaks=breaks),
                   error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", pixel, "\n")); return(NULL)})
     
     if (is.null(bf))
