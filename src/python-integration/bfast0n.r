@@ -15,7 +15,7 @@ EnableFastBfast = function()
     } else print("Using reference BFAST, install appelmar/bfast for a speed increase")
 }
 
-BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, Order=3, t0 = as.Date("2014-01-01"), NoBreakValue = -9999)
+BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, Order=3, t0 = as.Date("2014-01-01"), NoBreakValue = -9999, breaks="LWZ")
 {
     # Utility functions: here so that the scope is correct for SparkR
     GetBreakNumberWhole = function(bfts)
@@ -119,12 +119,12 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     }
     
     # Direct returns without calling functions
-    if (all(is.na(bf$breakpoints)))
+    if (all(is.na(breakpoints(bf, breaks=breaks)$breakpoints)))
         return(ReturnNoBreak())
     
     # Make a matrix for the output
     OutMatrix = matrix(NoBreakValue, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
-    ConfInts = confint(bf)$confint # Get confidence interval
+    ConfInts = confint(bf, breaks=breaks)$confint # Get confidence interval
     BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
     if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
         cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp), "Breakpoints:", ConfInts[,"breakpoints"], "\n"))
