@@ -73,6 +73,14 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
         rep(NoBreakValue, length(Years)*3)
     }
     
+    #bfts = bfastts(pixel, dates, type=TSType)
+    bfts = ts(pixel, start=DateStart, frequency = DateFrequency)
+    
+    # Handling dates
+    dates = as.Date(date_decimal(as.numeric(time(bfts))))
+    DateRange = range(dates)
+    Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
+    
     # Check whether we have enough non-NA pixels for running breakpoints.full, without doing preprocessing.
     # The right hand side formula calculates the columns in the bfastpp object.
     #if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
@@ -86,14 +94,6 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     # WARNING: need to check whether the threshold makes sense for non-EVI
     #if (mean(pixel, na.rm=TRUE) < 500)
     #    return(ReturnNoBreak())
-    
-    #bfts = bfastts(pixel, dates, type=TSType)
-    bfts = ts(pixel, start=DateStart, frequency = DateFrequency)
-    
-    # Handling dates
-    dates = as.Date(date_decimal(as.numeric(time(bfts))))
-    DateRange = range(dates)
-    Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
     
     # Use integers
     if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || GetBreakNumberWhole(bfts) >= floor(sum(!is.na(pixel))/2))

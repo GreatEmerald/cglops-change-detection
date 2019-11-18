@@ -1,6 +1,9 @@
 # Script for determining which BFAST/change detection method works the best,
 # according to change validation data.
 
+# TODO: Split into functions, move into a subfolder.
+# TODO: Make individual runs into an RMarkdown file for ease of reference.
+
 library(sf)
 library(raster)
 library(lubridate)
