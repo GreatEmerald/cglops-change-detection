@@ -1,0 +1,48 @@
+---
+title: "BFAST calibration log"
+author: "Dainius and Linlin"
+date: "19/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+
+source("bfast-cal/functions.r")
+registerDoParallel(cores = 4)
+```
+
+## Load time series
+
+```{r}
+RawData = LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv")
+NIRv_16d_byte = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Byte")
+NIRv_16d_byte_full = MergeAllYears(NIRv_16d_byte, RawData)
+
+ChangeIDs_UTM = as.data.frame(NIRv_16d_byte)[NIRv_16d_byte$change_at_300m == "yes","sample_id"]
+```
+
+
+## Example of a single time series
+
+Here's an example of a single plot, for the third unique location that has a confirmed break. The blue lines are breakpoints that got filtered by magnitude or coefficient tests, error bars show magnitude of each break in RMSE.
+
+```{r, cache=TRUE}
+MODDetectBreaks(c(GetMatrixFromSF(NIRv_16d_byte)[NIRv_16d_byte$sample_id == unique(ChangeIDs_UTM)[3],]), breaks="BIC", plot=TRUE, magthreshold = 70, main=unique(ChangeIDs_UTM)[3])
+```
+
+## Statistics for all points
+
+Statistics for breakpoint selection types, reference values:
+
+```{r, cache=TRUE}
+SCTestTest = TestParams(list(
+    list(breaks="LWZ"),
+    list(breaks="LWZ", magthreshold=70),
+    list(breaks="BIC"),
+    list(breaks="BIC", magthreshold=70)
+    ), "NIRv_16d_Byte")
+Result = SCTestTest
+do.call(rbind, tapply(1:nrow(Result), Result$call, function(x)FPStats(Result[x,]$bfast_guess, Result[x,]$changed)))
+```
+
