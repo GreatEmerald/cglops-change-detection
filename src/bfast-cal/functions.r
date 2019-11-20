@@ -136,23 +136,23 @@ MergeAllYears = function(df, data)
 # optional arguments should include all the tunables.
 # Ideally we would run this function in an optimiser (?optim),
 # so it tries all combinations of the variables and finds the best one.
-# TODO: "dates" should be an argument; we need to define somehow how we want to store time.
-#       BFAST works with ts(), so instead of "dates" it's better to use start and frequency.
-#       e.g. ts(data, start=c(StartYear, 1), frequency=Frequency) where
-#       StartYear = 2009, Frequency = 23 for 16-daily composites, 46 for 8-daily composites
-# TODO: Set h = Frequency (this is a year)
-# TODO: Vectorise; as input it should take the reference data.
-#       Output would be a list/matrix of breaks (one column per point),
-#       or maybe better a data.frame with X, Y, break time (fractional year).
-# TODO: Optionally, also allow plotting, but that only makes sense for single inputs
-#       (don't want 1000 plots)
-# TODO: Try to add more tunables to BFAST0N
+#
+# scsig: significance value at which the structure change test is considered successful
+# scrange: range over which the sctest should be run
+# sctype: type of sctest (?efp)
+# maginterval: interval (% time series) over which to compute breakpoint magnitudes
+# magcomponent: components (possibly multiple for which to calculate the magnitudes (trend/harmonsin1/harmoncos3/...)
+# magstat: statistic for magnitude thresholding (diff/RMSD/MAD/MD)
+# magthreshold: threshold above which the breaks are kept. Breaks lower than the threshold are discarded
+# coefcomponent: component (one!) for coefficient difference calculation
+# coefthresholds: min and max, if coefficient difference is within the range, the breakpoint will be discarded.
+#
 # The output is fractional years of all detected breaks, or FALSE if none detected,
 # or NA if not enough observations/error in running the function.
 MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="LWZ",
                            sctype="OLS-MOSUM", maginterval=0.1, magcomponent="trend",
                            magstat="RMSD", magthreshold=-Inf, coefcomponent="trend",
-                           coefthresholds=c(-Inf, Inf), plot=FALSE, quiet=FALSE, ...)
+                           coefthresholds=c(0, 0), plot=FALSE, quiet=FALSE, ...)
 {
     # The input should be a single row of a matrix.
     InputTS = GetTS(InputTS)
@@ -213,8 +213,10 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
         Result = bpp[bpOptim$breakpoints, "time"]
         if (!is.null(bpMag) && !is.null(bpCoef))
         {
-            MagFilter = bpMag[,magstat] > magthreshold
-            CoefFilter = bpCoef > min(coefthresholds) & bpCoef < max(coefthresholds)
+            # Keep breakpoints that are above the threshold of magnitude
+            MagFilter = bpMag[,abs(magstat)] > magthreshold
+            # Keep breakpoints where the coefficient difference is big enough
+            CoefFilter = bpCoef < min(coefthresholds) | bpCoef > max(coefthresholds)
             Result = Result[MagFilter & CoefFilter]
         }
         if (length(Result) < 1)
