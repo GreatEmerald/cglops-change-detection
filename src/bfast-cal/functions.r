@@ -214,7 +214,7 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
         if (!is.null(bpMag) && !is.null(bpCoef))
         {
             # Keep breakpoints that are above the threshold of magnitude
-            MagFilter = bpMag[,abs(magstat)] > magthreshold
+            MagFilter = abs(bpMag[,magstat]) > magthreshold
             # Keep breakpoints where the coefficient difference is big enough
             CoefFilter = bpCoef < min(coefthresholds) | bpCoef > max(coefthresholds)
             Result = Result[MagFilter & CoefFilter]
