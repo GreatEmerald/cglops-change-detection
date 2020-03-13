@@ -90,12 +90,12 @@ FPStats = function(predictions, truth = NULL)
     # We predicted no break, but there was one (we missed it)
     FalseNegativeCount = sum(!predictions & truth, na.rm=TRUE)
     # Percent of true positives out of all change
-    TruePositiveRate = TruePositiveCount / sum(truth, na.rm=TRUE) # AKA Sensitivity
+    Sensitivity = TruePositiveCount / (TruePositiveCount + FalseNegativeCount) # Previously TruePositiveRate
     Specificity = TrueNegativeCount / (TrueNegativeCount + FalsePositiveCount)
     # Percent of false positive out of no change
     FalsePositiveRate = FalsePositiveCount / sum(!truth, na.rm=TRUE) # False positive rate or alpha or p-value or Type I Error
-    SignalToNoise = TruePositiveCount / FalsePositiveCount
-    SignalToNoiseRate = TruePositiveRate / FalsePositiveRate # Likelihood Ratio for Positive Tests
+    PositiveProportion = TruePositiveCount / FalsePositiveCount
+    PositiveLikelihood = TruePositiveRate / FalsePositiveRate # Likelihood Ratio for Positive Tests
     PositivePredictiveValue = TruePositiveCount / (TruePositiveCount + FalsePositiveCount)
     Accuracy = (TruePositiveCount + TrueNegativeCount) / length(truth)
     return(data.frame(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount,
