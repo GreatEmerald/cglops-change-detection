@@ -9,7 +9,7 @@ RawData$year_fraction = round(RawData$year_fraction, 3)
 MyData$year_fraction = round(MyData$year_fraction, 3)
 
 # Merge the BFAST output with the raw data
-LWZ_merged = merge(RawData, MyData[MyData$call=="breaks LWZ, scrange NULL",], by=c("sample_id", "year_fraction"))
+LWZ_merged = merge(RawData, MyData[MyData$call=="breaks BIC",], by=c("sample_id", "year_fraction"))
 
 all.equal(LWZ_merged$geometry, LWZ_merged$geom) # TRUE, drop one
 LWZ_merged$geom = NULL
@@ -23,4 +23,4 @@ FPStats(LWZ_merged)
 LWZ_merged = AddChangeClassCol(LWZ_merged)
 sort(table(LWZ_merged$changeclass)) # Most are trees to grass, then water to grass
 PerClassStats = FPStatsPerClass(LWZ_merged)
-write.csv(PerClassStats, "../output/RoW-change-per-class-LWZ.csv")
+write.csv(PerClassStats, "../output/RoW-change-per-class-BIC.csv")
