@@ -1,20 +1,26 @@
 # Break detection functions
 
-# 3) Run BFAST over the time series and get the detected breaks.
-# This is the function that should be optimised;
-# optional arguments should include all the tunables.
-# Ideally we would run this function in an optimiser (?optim),
-# so it tries all combinations of the variables and finds the best one.
-#
-# scsig: significance value at which the structure change test is considered successful
-# scrange: range over which the sctest should be run
-# sctype: type of sctest (?efp)
-# maginterval: interval (% time series) over which to compute breakpoint magnitudes
-# magcomponent: components (possibly multiple for which to calculate the magnitudes (trend/harmonsin1/harmoncos3/...)
-# magstat: statistic for magnitude thresholding (diff/RMSD/MAD/MD)
-# magthreshold: threshold above which the breaks are kept. Breaks lower than the threshold are discarded
-# coefcomponent: component (one!) for coefficient difference calculation
-# coefthresholds: min and max, if coefficient difference is within the range, the breakpoint will be discarded.
+#' 3) Run BFAST over the time series and get the detected breaks.
+#'
+#' This is the function that should be optimised;
+#' optional arguments should include all the tunables.
+#' Ideally we would run this function in an optimiser (?optim),
+#' so it tries all combinations of the variables and finds the best one.
+#'
+#' @param scsig significance value at which the structure change test is considered successful
+#' @param scrange range over which the sctest should be run
+#' @param sctype type of sctest (?efp)
+#' @param maginterval interval (% time series) over which to compute breakpoint magnitudes
+#' @param magcomponent components (possibly multiple for which to calculate the magnitudes (trend/harmonsin1/harmoncos3/...)
+#' @param magstat statistic for magnitude thresholding (diff/RMSD/MAD/MD)
+#' @param magthreshold threshold above which the breaks are kept. Breaks lower than the threshold are discarded
+#' @param coefcomponent component (one!) for coefficient difference calculation
+#' @param coefthresholds min and max, if coefficient difference is within the range, the breakpoint will be discarded.
+#' @param plot Whether to call plot.bfast0n() on the output
+#' @param quiet Suppress print output
+#' @param order Harmonic order
+#' @param formula Formula passed to sctest() and bfastpp()
+#' @param TargetYears Year fractions of expected breaks for plotting
 #
 # The output is fractional years of all detected breaks, or FALSE if none detected,
 # or NA if not enough observations/error in running the function.
@@ -22,7 +28,7 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
                            sctype="OLS-MOSUM", maginterval=0.1, magcomponent="trend",
                            magstat="RMSD", magthreshold=-Inf, coefcomponent="trend",
                            coefthresholds=c(0, 0), plot=FALSE, quiet=FALSE, order=3,
-                           formula=response ~ harmon + trend, ...)
+                           formula=response ~ harmon + trend, TargetYears=NULL, ...)
 {
     # The input should be a single row of a matrix.
     InputTS = GetTS(InputTS) # Convert into a ts object
@@ -63,7 +69,10 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
         }
         
         if (plot)
+        {
             plot.bfast0n(bp, bpp, breaks=breaks, bpMag=bpMag, ...)
+            abline(v=TargetYears, col="red")
+        }
         
         if (all(is.na(bpOptim$breakpoints))) # bfast0n didn't find any breaks, return FALSE
             return(FALSE)
@@ -90,8 +99,8 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
         }
         if (length(Result) < 1)
             return(FALSE) # If we filtered out all results, return FALSE again
-        if (plot) # For ones that got kept, plot red on top
-            abline(v=Result, col="red")
+        if (plot) # For ones that got kept, plot black on top
+            abline(v=Result, col="black")
         return(Result)
     } else {
         print("too cloudy")

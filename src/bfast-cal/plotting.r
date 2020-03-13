@@ -14,6 +14,7 @@ plot.bfast0n = function(bp, bpp, breaks, bpMag=NULL, ...)
     
     # Get the requested breaks
     bpOptim = breakpoints(bp, breaks=breaks)
+    title(sub=paste("RSS:", round(bpOptim$RSS)))
     
     if (length(bpOptim$breakpoints) > 0 && !all(is.na(bpOptim$breakpoints))) {
         bpTimes = bpp[bpOptim$breakpoints, "time"]
