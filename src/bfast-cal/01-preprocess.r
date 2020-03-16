@@ -28,6 +28,38 @@ LoadReferenceDataAfrica = function(path="../data/ValidationPoints-AfricaPriority
     return(Data)
 }
 
+#' Check reference data.frame for inconsistencies
+#' 
+#' @param data The data.frame to check. This is the full reference data, not just unique locations
+CheckReferenceData = function(data)
+{
+    Consistent = TRUE
+    
+    # So far there should be 4 years of data, so we should have 4 rows per each entry
+    if(!all(table(data$sample_id) == 4))
+    {
+        print(which(table(data$sample_id) != 4))
+        cat("Error: Above samples do not have 4 entries\n")
+        Consistent = FALSE
+    }
+    
+    if (!all(data$change_at_300m == "yes" | data$change_at_300m == "no"))
+    {
+        print(which(data$change_at_300m != "yes" & data$change_at_300m != "no"))
+        cat("Error: Change at 300 m is neither yes nor no\n")
+        Consistent = FALSE
+    }
+    
+    if (!all(data$year_fraction > 2014.5 & data$year_fraction < 2019.5))
+    {
+        print(which(data$year_fraction < 2014.5 | data$year_fraction > 2019.5))
+        cat("Error: Year fractions out of range\n")
+        Consistent = FALSE
+    }
+    
+    if (Consistent) cat("Data file is consistent") else stop("Data file is inconsistent, see errors above!")
+}
+
 # 2) Extract time series data from the coordinates,
 # and cache it in a CSV/GPKG so that we don't need to do that again.
 # This is where we select different VIs.
