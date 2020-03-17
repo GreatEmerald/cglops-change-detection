@@ -6,25 +6,40 @@
 # 1) Load the CSV. Ideally we only need an st_read() to get an sf object
 LoadReferenceDataAfrica = function(path="../data/ValidationPoints-AfricaPriority.csv")
 {
-    # Normally if we have a good CSV, we just do this.
-    #Data = st_read(path, options=c("X_POSSIBLE_NAMES=x", "Y_POSSIBLE_NAMES=y"))
     # Now our centroids are in another file, so we need to do more.
-    DataBadCoords = read.csv(path)
+    DataBadCoords = LoadReferenceData(path, check=FALSE)
     CentroidData = read.csv("../data/2019_11_06_training_data_100m.csv")
     Data = merge(DataBadCoords, CentroidData, by.x="sample_id", by.y="sampleid")
-    Data = st_as_sf(Data, coords = c("centroid_x", "centroid_y"), dim="XY")
     Data = Data[!is.na(Data$change_at_300m),] # Remove NAs
-    
-    # Which columns are numeric
+    return(Data)
+}
+
+#' Load generic reference data
+#' 
+#' Assumes that the data is good quality.
+#' Otherwise, write your own preprocessing function that calls this one.
+#' 
+#' @param input If character, path to a CSV file. Otherwise, can be a ready data.frame.
+#' @param xname Name of the X column
+#' @param yname Name of the Y column
+#' @param check Whether to check the result for consistency. NA means check and emit warnings, TRUE means enforce
+LoadReferenceData = function(input, xname="centroid_x", yname="centroid_y", check=NA)
+{
+    if (is.character(input)) {
+        Data = st_read(input, stringsAsFactors = FALSE,
+            options=c(paste0("X_POSSIBLE_NAMES=", xname), paste0("Y_POSSIBLE_NAMES=", yname)))
+    } else Data = input
     NumCols = c("rowid", "location_id", "sample_id", "bare", "burnt", "crops",
                 "fallow_shifting_cultivation", "grassland", "lichen_and_moss", "shrub",
                 "snow_and_ice", "tree", "urban_built_up", "water", "wetland_herbaceous",
-                "not_sure", "reference_year")
+                "not_sure", "reference_year", "x", "y", "centroid_x", "centroid_y", "year_fraction")
+    NumCols = c(NumCols, grep(glob2rx("X????.??.??"), names(Data), value = TRUE))
     for (ColName in NumCols)
-    {
-        Data[[ColName]] = as.numeric(Data[[ColName]])
-    }
+        if (ColName %in% names(Data))
+            suppressWarnings(Data[[ColName]] <- as.numeric(Data[[ColName]]))
     st_crs(Data) = 4326
+    
+    if (is.na(check)) try(CheckReferenceData(Data)) else if (check) CheckReferenceData(Data)
     return(Data)
 }
 
@@ -50,9 +65,15 @@ CheckReferenceData = function(data)
         Consistent = FALSE
     }
     
-    if (!all(data$year_fraction > 2014.5 & data$year_fraction < 2019.5))
+    if (any(is.na(data$year_fraction)))
     {
-        print(which(data$year_fraction < 2014.5 | data$year_fraction > 2019.5))
+        print(which(is.na(data$year_fraction)))
+        cat("Error: missing year fraction\n")
+        Consistent = FALSE
+    }
+    if (!all(na.omit(data$year_fraction) > 2014.5 & na.omit(data$year_fraction) < 2019.5))
+    {
+        print(which(na.omit(data$year_fraction) < 2014.5 | na.omit(data$year_fraction) > 2019.5))
         cat("Error: Year fractions out of range\n")
         Consistent = FALSE
     }
