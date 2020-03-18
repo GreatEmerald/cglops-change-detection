@@ -1,3 +1,4 @@
+library(sf)
 # Functions for preprocessing data prior to running break detection
 
 # Import the validation CSVs; they contain one entry per year that gives the approximate time of the break in the year.
@@ -75,6 +76,13 @@ CheckReferenceData = function(data)
     {
         print(which(na.omit(data$year_fraction) < 2014.5 | na.omit(data$year_fraction) > 2019.5))
         cat("Error: Year fractions out of range\n")
+        Consistent = FALSE
+    }
+    
+    if (!all(data[data$reference_year==2015,]$change_at_300m=="no"))
+    {
+        print(which(data[data$reference_year==2015,]$change_at_300m!="no"))
+        cat("Error: Samples labelled as change in 2015\n")
         Consistent = FALSE
     }
     
