@@ -2,8 +2,11 @@
 AddChangeClassCol = function(data)
 {
     data$changeclass = NA
-    for (i in which(data$change_at_300m=="yes"))
-        data[i, ][["changeclass"]] = paste(data[i-1,][["dominant_lc"]], "to", data[i,][["dominant_lc"]])
+    
+    fromclasses = data[which(data$change_at_300m=="yes")-1, ][["dominant_lc"]]
+    toclasses = data[which(data$change_at_300m=="yes"), ][["dominant_lc"]]
+    
+    data[data$change_at_300m=="yes",][["changeclass"]] = paste(fromclasses, "to", toclasses)
     return(data)
 }
 
