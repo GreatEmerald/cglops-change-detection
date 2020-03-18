@@ -6,7 +6,7 @@ AddChangeClassCol = function(data)
     fromclasses = data[which(data$change_at_300m=="yes")-1, ][["dominant_lc"]]
     toclasses = data[which(data$change_at_300m=="yes"), ][["dominant_lc"]]
     
-    data[data$change_at_300m=="yes",][["changeclass"]] = paste(fromclasses, "to", toclasses)
+    data[which(data$change_at_300m=="yes"),][["changeclass"]] = paste(fromclasses, "to", toclasses)
     return(data)
 }
 
