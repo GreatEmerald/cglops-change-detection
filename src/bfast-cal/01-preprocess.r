@@ -40,6 +40,9 @@ LoadReferenceData = function(input, xname="centroid_x", yname="centroid_y", chec
             suppressWarnings(Data[[ColName]] <- as.numeric(Data[[ColName]]))
     st_crs(Data) = 4326
     
+    # Reorder, some functions rely on subsequent steps to indicate change
+    Data = Data[order(Data$sample_id, Data$reference_year),]
+    
     if (is.na(check)) try(CheckReferenceData(Data)) else if (check) CheckReferenceData(Data)
     return(Data)
 }
@@ -83,6 +86,15 @@ CheckReferenceData = function(data)
     {
         print(which(data[data$reference_year==2015,]$change_at_300m!="no"))
         cat("Error: Samples labelled as change in 2015\n")
+        Consistent = FALSE
+    }
+    
+    YearSteps = data[1:nrow(data)-1,]$reference_year - data[2:nrow(data),]$reference_year
+    ConsecutiveSamples = data[1:nrow(data)-1,]$sample_id == data[2:nrow(data),]$sample_id
+    if (!all(YearSteps == -1 | !ConsecutiveSamples))
+    {
+        print(which(YearSteps != -1 & ConsecutiveSamples))
+        cat("Error: The data is not sorted, found years that are out of order!\n")
         Consistent = FALSE
     }
     
