@@ -44,7 +44,7 @@ LoadReferenceData = function(input, xname="centroid_x", yname="centroid_y", chec
     Data = Data[order(Data$sample_id, Data$validation_id, Data$reference_year),]
     # Remove duplicates
     UnessentialCols = c("rowid", "field_1")
-    Data = Data[!duplicated(Data[,!names(GlobalData) %in% UnessentialCols]),]
+    Data = Data[!duplicated(Data[,!names(Data) %in% UnessentialCols]),]
     
     if (is.na(check)) try(CheckReferenceData(Data)) else if (check) CheckReferenceData(Data)
     return(Data)
