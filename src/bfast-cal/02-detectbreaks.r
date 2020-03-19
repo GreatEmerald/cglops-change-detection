@@ -1,3 +1,6 @@
+library(strucchange)
+library(bfast)
+source("../src/bfast-cal/plotting.r")
 # Break detection functions
 
 #' 3) Run BFAST over the time series and get the detected breaks.
@@ -21,23 +24,30 @@
 #' @param order Harmonic order
 #' @param formula Formula passed to sctest() and bfastpp()
 #' @param TargetYears Year fractions of expected breaks for plotting
-#
-# The output is fractional years of all detected breaks, or FALSE if none detected,
-# or NA if not enough observations/error in running the function.
+#' @param seasonfreq Multiplier for how many bins to use in a season. 1 means one bin per observation, 0.5 means two observations per bin.
+#'
+#' @return Fractional years of all detected breaks, or FALSE if none detected,
+#' or NA if not enough observations/error in running the function.
 MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="LWZ",
                            sctype="OLS-MOSUM", maginterval=0.1, magcomponent="trend",
                            magstat="RMSD", magthreshold=-Inf, coefcomponent="trend",
                            coefthresholds=c(0, 0), plot=FALSE, quiet=FALSE, order=3,
-                           formula=response ~ harmon + trend, TargetYears=NULL, ...)
+                           formula=response ~ harmon + trend, TargetYears=NULL,
+                           seasonfreq=0.5, ...)
 {
     # The input should be a single row of a matrix.
     InputTS = GetTS(InputTS) # Convert into a ts object
     Observations = sum(!is.na(InputTS))
     if (!quiet)
         print(paste("Observations for point:", Observations))
-    h = frequency(InputTS) # Set h to number of observations per year, i.e. frequency of time series
+    h = ceiling(frequency(InputTS)) # Set h to number of observations per year, i.e. frequency of time series
     if (Observations > h*2) {
         bpp = bfastpp(InputTS, order=order) # Preprocess the ts into a data.frame
+        # Fix season when it's not an integer
+        myseason = as.numeric(as.character(bpp$season)) # Deparse season again
+        if (!all(is.na(myseason))) # If we failed to deparse, then we're using a fixed bfastpp already, no need to do anything
+            bpp$season = cut(myseason, frequency(InputTS)*seasonfreq, ordered_result = TRUE) # Rebin all
+
         # Run the sctest first to determine whether to run bfast0n
         if (!is.null(scrange)) {
             SC = sctest(efp(formula,
