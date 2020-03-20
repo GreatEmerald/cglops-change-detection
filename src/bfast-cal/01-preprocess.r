@@ -1,4 +1,6 @@
 library(sf)
+library(raster)
+library(lubridate)
 # Functions for preprocessing data prior to running break detection
 
 # Import the validation CSVs; they contain one entry per year that gives the approximate time of the break in the year.
@@ -125,8 +127,10 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
         
         # Input directory that contains all our VRTs is sourcedir,
         # inside we have VIs, and then UTM zones as VRTs
-        InputVRTs = list.files(file.path(sourcedir, vi), full.names = TRUE)
+        InputVRTs = list.files(file.path(sourcedir, vi), pattern=glob2rx("*.vrt"), full.names = TRUE)
         
+        pbi = 1
+        pb = txtProgressBar(pbi, length(InputVRTs), 1, style=3)
         OutDF = NULL
         for (UTMfile in InputVRTs)
         {
@@ -141,10 +145,13 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
             if (length(PointsInZone) <= 0)
                 next
             # Extract those
-            print(system.time(ChangedVITS <- extract(VIMosaic, PointsUTM[PointsInZone,]))) # method="bilinear" takes too much RAM
+            ChangedVITS = extract(VIMosaic, PointsUTM[PointsInZone,])
             # Put back into sf with orginal coords
             OutDF = rbind(OutDF, cbind(pointlocs[PointsInZone,c("x", "y", "sample_id")], ChangedVITS))
+            pbi=pbi+1
+            setTxtProgressBar(pb, pbi)
         }
+        close(pb)
         
         # Finally, save to cache and not do that again
         st_write(OutDF, VITSFile, delete_dsn = TRUE)
