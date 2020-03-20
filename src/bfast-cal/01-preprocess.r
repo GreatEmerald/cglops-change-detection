@@ -41,7 +41,7 @@ LoadReferenceData = function(input, xname="centroid_x", yname="centroid_y", chec
     st_crs(Data) = 4326
     
     # Reorder, some functions rely on subsequent steps to indicate change
-    Data = Data[order(Data$sample_id, Data$validation_id, Data$reference_year),]
+    Data = Data[order(Data$sample_id, Data$reference_year),]
     # Remove duplicates
     UnessentialCols = c("rowid", "field_1")
     Data = Data[!duplicated(Data[,!names(Data) %in% UnessentialCols]),]
@@ -94,10 +94,10 @@ CheckReferenceData = function(data)
     
     YearSteps = data[1:nrow(data)-1,]$reference_year - data[2:nrow(data),]$reference_year
     ConsecutiveSamples = data[1:nrow(data)-1,]$sample_id == data[2:nrow(data),]$sample_id
-    ConsecutiveValidations = data[1:nrow(data)-1,]$validation_id == data[2:nrow(data),]$validation_id
-    if (!all(YearSteps == -1 | !ConsecutiveSamples | !ConsecutiveValidations))
+    #ConsecutiveValidations = data[1:nrow(data)-1,]$validation_id == data[2:nrow(data),]$validation_id
+    if (!all(YearSteps == -1 | !ConsecutiveSamples))
     {
-        print(which(YearSteps != -1 & ConsecutiveSamples & ConsecutiveValidations))
+        print(which(YearSteps != -1 & ConsecutiveSamples))
         cat("Error: Found years that are out of order! The data is either not sorted properly or not time-filled.\n")
         Consistent = FALSE
     }

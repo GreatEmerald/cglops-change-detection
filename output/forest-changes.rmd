@@ -85,7 +85,7 @@ ChangeOnly = GlobalData[GlobalData$change_at_300m=="yes",]
 ChangeOnly[which(!is.na(ChangeOnly$X2015.01.03)),]$sample_id
 ```
 
-That is sad (also very weird that these samples are OK)
+That is very unfortunate (also very weird that these samples are OK)
 
 ```{r plot_bfast8}
 Sample = 1399440
@@ -105,7 +105,15 @@ SampleTS = GetMatrixFromSF(GlobalData[GlobalData$sample_id==Sample,])[1,]
 MODDetectBreaks(SampleTS, order=3, scrange=NULL, plot=TRUE, TargetYears=GlobalData[GlobalData$sample_id==Sample & GlobalData$change_at_300m=="yes", ]$reference_year)
 ```
 
-Let's choose 1121506 for now. What if we change the order:
+Let's choose 1121506 for now. What is its history?
+
+```{r infotable}
+GlobalData[GlobalData$sample_id==Sample,c("sample_id", "validation_id", "reference_year", "change_at_300m", "dominant_lc", "changeclass", "tree", "grassland")]
+```
+
+Unfortunately the data is still inconsistent. There are two validation IDs, for the different years, which means it is not in order and the change class is wrong... Should we ignore validation IDs? If so, what to do when we have two validations on the same point, saying different things for the same year?
+
+Try different fits. What if we change the order:
 
 ```{r plot_bfast_order2}
 Sample = 1121506
@@ -138,7 +146,7 @@ SampleTS = GetMatrixFromSF(GlobalData[GlobalData$sample_id==Sample,])[1,]
 MODDetectBreaks(SampleTS, order=3, scrange=NULL, plot=TRUE, breaks="BIC", TargetYears=GlobalData[GlobalData$sample_id==Sample & GlobalData$change_at_300m=="yes", ]$reference_year)
 ```
 
-```{r plot_bfast_bic}
+```{r plot_bfast__order1_bic}
 SampleTS = GetMatrixFromSF(GlobalData[GlobalData$sample_id==Sample,])[1,]
 MODDetectBreaks(SampleTS, order=1, scrange=NULL, plot=TRUE, breaks="BIC", TargetYears=GlobalData[GlobalData$sample_id==Sample & GlobalData$change_at_300m=="yes", ]$reference_year)
 ```
@@ -153,4 +161,4 @@ SampleTS = GetMatrixFromSF(GlobalData[GlobalData$sample_id==Sample,])[1,]
 MODDetectBreaks(SampleTS, order=1, scrange=NULL, plot=TRUE, formula=response~trend+season, seasonfreq=0.5, breaks="BIC", TargetYears=GlobalData[GlobalData$sample_id==Sample & GlobalData$change_at_300m=="yes", ]$reference_year)
 ```
 
-All in all, best model is trend only, no matter if 
+All in all, best model is trend only, no matter if BIC or LWZ
