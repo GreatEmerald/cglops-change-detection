@@ -72,17 +72,9 @@ datatable(FPStatsPerParam(ResultBaseline))
 ```
 
 ```{r perclass-stats}
-for (call in unique(ResultBaseline$call))
-{
-    print(call)
-    datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==call,]))
-}
+htmltools::tagList(lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,]), caption=x)))
 ```
 
 ```{r perprocess-stats}
-for (call in unique(ResultBaseline$call))
-{
-    print(call)
-    datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==call,], column = "changeprocess"))
-}
+htmltools::tagList(lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,], column = "changeprocess"), caption=x)))
 ```

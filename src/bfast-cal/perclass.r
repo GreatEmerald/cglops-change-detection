@@ -13,14 +13,14 @@ AddChangeClassCol = function(data)
 }
 
 # Get a data frame only with the particular class of change and all the no-changes
-FilterChange = function(data, changeclass) data[data$changeclass==changeclass|is.na(data$changeclass),]
+FilterChange = function(data, changeclass, column="changeclass") data[data[[column]]==changeclass|is.na(data[[column]]),]
 
 # Run FilterChange+FPStats to get a stat table, needs a changeclass column
 # Use column="changeprocess" for the coarse change classification
 FPStatsPerClass = function(data, cl=4, column="changeclass")
 {
     ChangeClasses = names(sort(table(data[[column]]), decreasing = TRUE))
-    PerClassStats = pblapply(ChangeClasses, function(cls) FPStats(FilterChange(data, cls)), cl=cl)
+    PerClassStats = pblapply(ChangeClasses, function(cls) FPStats(FilterChange(data, cls, column=column)), cl=cl)
     PerClassStats = do.call(rbind, PerClassStats)
     rownames(PerClassStats) = ChangeClasses
     return(PerClassStats)
