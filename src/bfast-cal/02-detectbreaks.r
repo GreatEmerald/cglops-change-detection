@@ -1,5 +1,6 @@
 library(strucchange)
 library(bfast)
+source("../src/utils/enable_fast_bfast.r")
 source("../src/bfast-cal/plotting.r")
 # Break detection functions
 
@@ -36,7 +37,8 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
                            seasonfreq=0.5, ...)
 {
     # The input should be a single row of a matrix.
-    InputTS = GetTS(InputTS) # Convert into a ts object
+    if (!is.ts(InputTS))
+        InputTS = GetTS(InputTS) # Convert into a ts object
     Observations = sum(!is.na(InputTS))
     if (!quiet)
         print(paste("Observations for point:", Observations))

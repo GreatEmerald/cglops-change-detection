@@ -4,13 +4,13 @@
 # Threshold: how much fuzziness is allowed to still consider a break detected.
 # This function needs to be run for every year and every point.
 # If there was no break for that year, and BFAST predicted one, should return FALSE.
-IsBreakInTargetYear = function(BreakTimes, TargetYear, threshold=0.5)
+IsBreakInTargetYear = function(BreakTimes, TargetYear, threshold=1)
 {
     #if (is.na(TargetYear))
     #    TargetYear = 2016 # If there is no break, we look at whether we predicted a break in 2016
     # TODO: Needs to be updated; previously, lack of break meant that the break time would be set to NA,
     # but now it's no longer the case, it's change_at_300m = FALSE and reference_year=<year>
-    return(any(BreakTimes > TargetYear - threshold & BreakTimes < TargetYear+1+threshold))
+    return(any(BreakTimes > TargetYear - threshold & BreakTimes < TargetYear+threshold))
 }
 
 # 4b) Vectorised version (takes a list of MODDetectBreaks() output and a column of target years)
@@ -26,9 +26,13 @@ VectorisedIsBreakInTargetYear = function(BreakList, threshold=0.5, TY=TargetYear
 FPStats = function(predictions, truth = NULL)
 {
     # If we get a data.frame, try to automagically determine what is predicted and what is true
-    if (is.data.frame(predictions))
+    if (is.data.frame(predictions) && is.null(truth))
     {
-        truth = predictions$change_at_300m == "yes"
+        if ("change_at_300m" %in% names(predictions)) {
+            truth = predictions$change_at_300m == "yes"
+        } else if ("changed" %in% names(predictions)) {
+            truth = predictions$changed
+        } else stop("Could not determine the column with truth, pass truth explicitly")
         predictions = predictions$bfast_guess
     }
     
@@ -46,10 +50,19 @@ FPStats = function(predictions, truth = NULL)
     # Percent of false positive out of no change
     FalsePositiveRate = FalsePositiveCount / sum(!truth, na.rm=TRUE) # False positive rate or alpha or p-value or Type I Error
     PositiveProportion = TruePositiveCount / FalsePositiveCount
-    PositiveLikelihood = TruePositiveRate / FalsePositiveRate # Likelihood Ratio for Positive Tests
+    PositiveLikelihood = Sensitivity / FalsePositiveRate # Likelihood Ratio for Positive Tests
     PositivePredictiveValue = TruePositiveCount / (TruePositiveCount + FalsePositiveCount)
     Accuracy = (TruePositiveCount + TrueNegativeCount) / length(truth)
     return(data.frame(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount,
-                      TruePositiveRate, Specificity, FalsePositiveRate, SignalToNoise, SignalToNoiseRate,
+                      Sensitivity, Specificity, FalsePositiveRate, PositiveProportion, PositiveLikelihood,
                       PositivePredictiveValue, Accuracy))
+}
+
+#' Utility to run FPStats() on combined dataframes from TestParams()
+#' 
+#' @param df data.frame that contains information about the call, truth and predictions
+#' @return data.frame of FPStats, with one row per call
+FPStatsPerParam = function(df)
+{
+    do.call(rbind, by(df, list(df$call), FPStats))
 }

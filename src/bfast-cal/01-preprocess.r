@@ -104,7 +104,7 @@ CheckReferenceData = function(data)
         Consistent = FALSE
     }
     
-    if (Consistent) cat("Data file is consistent") else stop("Data file is inconsistent, see errors above!")
+    if (Consistent) cat("Data file is consistent\n") else stop("Data file is inconsistent, see errors above!")
 }
 
 # 2) Extract time series data from the coordinates,

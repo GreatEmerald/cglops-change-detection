@@ -2,7 +2,7 @@
 
 # Calculate dates from number of elements in the input
 # Returns a ts object
-GetTS = function(data, frequency=NULL, start=2009, years=11)
+GetTS = function(data, frequency=23, start=2009, years=10)
 {
     stopifnot(is.vector(data)) # Univariate only
     # 8-daily frequency is 46, 16-daily is 23, we have 10 years of data

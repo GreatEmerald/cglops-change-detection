@@ -1,8 +1,12 @@
+library(foreach)
+library(doParallel)
+source("../src/bfast-cal/04-validation.r")
+
 # 4c) Wrapper for running 3+4 in one.
 # Result is a logical vector saying how many times we accurately predicted a break,
 # and how many times not. One value per year.
 # VITS is the full VI TS, all years should be there.
-TestMODBreakpointDetection = function(VITS, threshold=0.5, TargetYears=TargetYears, ...)
+TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, ...)
 {
     # Output into a new column
     VITS$bfast_guess = NA
@@ -13,7 +17,7 @@ TestMODBreakpointDetection = function(VITS, threshold=0.5, TargetYears=TargetYea
     for (i in unique(VITS$sample_id))
     {
         SampleMatrix = GetMatrixFromSF(VITS[VITS$sample_id == i,])
-        BreakTimes = MODDetectBreaks(SampleMatrix[1,], ..., quiet=TRUE)
+        BreakTimes = MODDetectBreaks(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=TRUE)
         
         pbi = pbi + 1
         setTxtProgressBar(pb, pbi)
@@ -31,32 +35,37 @@ TestMODBreakpointDetection = function(VITS, threshold=0.5, TargetYears=TargetYea
 }
 
 
-# ParamLists is a list of lists of parameter and value pairs
-TestParams = function(ParamLists, vi)
+#' Function to test statistics on various BFAST0N parameters
+#' 
+#' @param ParamLists List of parameter lists. Each list will be run on a single core.
+#' @param comment Some reference string, e.g. VI name.
+#' @param data A data.frame that contains time series information and change information for each year.
+#' 
+#' @return A data.frame with BFAST guesses vs truth that can be input into FPStats().
+TestParams = function(ParamLists, comment="", data)
 {
     Result = foreach(ParamList = ParamLists, .combine=rbind, .multicombine = TRUE, .verbose=TRUE) %dopar%
     {
-        VI = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), vi)
-        VI_full = MergeAllYears(VI, RawData)
-        rm(VI)
         # Filter out 2015 and 2018, former can't change and latter can't be detected
-        VI_full = VI_full[VI_full$reference_year %in% 2016:2017,]
-        # Filter out burnt areas
-        # IDs to filter out
-        BurntIDs = GetBurntIDs(VI_full)
-        BurntIDs = BurntIDs[!BurntIDs %in% ChangeIDs_UTM] # Do not exclude IDs that have changed
-        VI_full = VI_full[!VI_full$sample_id %in% BurntIDs,] # Exclude burnt areas
+        # NB: this needs to change depending on time series length!
+        data = data[data$reference_year %in% 2016:2017,]
         
         callstring = paste(names(ParamList), ParamList, collapse=", ")
         ParamList$plot = FALSE
-        ParamList$VITS = VI_full
-        rm(VI_full)
+        ParamList$VITS = data
+        rm(data)
         gc()
         Result = do.call("TestMODBreakpointDetection", ParamList)
         Result$changed = Result$change_at_300m == "yes"
-        Result$vi = as.factor(vi) # Just for reference
+        Result$comment = as.factor(comment) # Just for reference
         Result$call = callstring
-        Result[,c("sample_id", "year_fraction", "changed", "bfast_guess", "call", "vi")]
+        Result
+        # KeepCols = c("sample_id", "year_fraction", "changed", "bfast_guess", "call", "comment")
+        # OptionalCols = c("changeclass", "coarsechange")
+        # for (OC in OptionalCols)
+        #     if (any(names(Result)==OC))
+        #         KeepCols = c(KeepCols, OC)
+        # Result[,KeepCols]
     }
     return(Result)
 }
