@@ -12,20 +12,6 @@ AddChangeClassCol = function(data)
     return(data)
 }
 
-# Get a data frame only with the particular class of change and all the no-changes
-FilterChange = function(data, changeclass, column="changeclass") data[data[[column]]==changeclass|is.na(data[[column]]),]
-
-# Run FilterChange+FPStats to get a stat table, needs a changeclass column
-# Use column="changeprocess" for the coarse change classification
-FPStatsPerClass = function(data, cl=4, column="changeclass")
-{
-    ChangeClasses = names(sort(table(data[[column]]), decreasing = TRUE))
-    PerClassStats = pblapply(ChangeClasses, function(cls) FPStats(FilterChange(data, cls, column=column)), cl=cl)
-    PerClassStats = do.call(rbind, PerClassStats)
-    rownames(PerClassStats) = ChangeClasses
-    return(PerClassStats)
-}
-
 #' Add a column that clusters change classes into three:
 #' between vegetation, between non-vegetation, and between vegetation and non-vegetation
 #' 
@@ -46,4 +32,23 @@ AddChangeProcessCol = function(data)
     ChangeProcesses[VegetationChange[,1] & VegetationChange[,2]] = "between vegetation"
     ChangeProcesses[is.na(data$changeclass)] = NA
     return(cbind(data, changeprocess = as.factor(ChangeProcesses)))
+}
+
+# Get a data frame only with the particular class of change and all the no-changes
+FilterChange = function(data, changeclass, column="changeclass") data[data[[column]]==changeclass|is.na(data[[column]]),]
+
+# Run FilterChange+FPStats to get a stat table, needs a changeclass column
+# Use column="changeprocess" for the coarse change classification
+FPStatsPerClass = function(data, cl=4, column="changeclass")
+{
+    ChangeClasses = names(sort(table(data[[column]]), decreasing = TRUE))
+    PerClassStats = pblapply(ChangeClasses, function(cls) FPStats(FilterChange(data, cls, column=column)), cl=cl)
+    PerClassStats = do.call(rbind, PerClassStats)
+    rownames(PerClassStats) = ChangeClasses
+    return(PerClassStats)
+}
+
+FPStatsPerContinent = function(...)
+{
+    FPStatsPerClass(..., column="continent")
 }

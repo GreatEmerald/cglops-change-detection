@@ -32,6 +32,7 @@ AfricaData = LoadReferenceData("../data/NIRv_16d_byte_full_Africa.csv")
 AfricaData$X = NULL
 AfricaData$geom = NULL
 AfricaData$continent="Africa"
+ROWData$continent = ROWData$field_30
 AfricaData$field_262 = NULL
 ROWData$field_30 = NULL
 names(ROWData)[1:233] = names(AfricaData)[1:233]
@@ -67,14 +68,32 @@ ResultBaseline = TestParams(list(
 ResultBaseline = ResultBaseline[ResultBaseline$reference_year %in% 2016:2017,]
 ```
 
+## Overall results
+
 ```{r}
 datatable(FPStatsPerParam(ResultBaseline))
 ```
+
+It seems that either `response~trend+season` or `response~trend` are much better than anything with seasonality.
+
+## Results per class
 
 ```{r perclass-stats}
 htmltools::tagList(lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,]), caption=x)))
 ```
 
+The improvements are across the board, rather than in particular classes, with a few exceptions.
+
+## Results per change process
+
 ```{r perprocess-stats}
 htmltools::tagList(lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,], column = "changeprocess"), caption=x)))
+```
+
+As expected, between vegetation and non-vegetation it's much easier, and between vegetation is the hardest.
+
+## Results per continent
+
+```{r percontinent-stats}
+htmltools::tagList(lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerContinent(ResultBaseline[ResultBaseline$call==x,]), caption=x)))
 ```
