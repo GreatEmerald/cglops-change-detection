@@ -114,7 +114,7 @@ CheckReferenceData = function(data)
 # The output is an sf data.frame, with rows being unique points,
 # and columns being timesteps, first columns being x, y, and sample_id, last being geometry.
 # Data is the value of the vegetation index.
-LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/greatemerald/modis-utm/input-vrt/", prefix="", force=FALSE)
+LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/greatemerald/modis-utm/input-vrt/", prefix="", force=FALSE, ...)
 {
     # Cache file. Has location_id, sample_id, x, y, geometry and the values
     VITSFile = paste0("../data/", prefix, vi, "-TS.gpkg")
@@ -136,8 +136,8 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
         {
             print(paste("Processing", UTMfile))
             VIMosaic = brick(UTMfile)
-            VIMosaic = setZ(VIMosaic, GetDates(1:nlayers(VIMosaic)))
-            names(VIMosaic) = GetDates(1:nlayers(VIMosaic))
+            VIMosaic = setZ(VIMosaic, GetDates(1:nlayers(VIMosaic), ...))
+            names(VIMosaic) = GetDates(1:nlayers(VIMosaic), ...)
             # Reproject all points to this UTM zone
             PointsUTM = st_transform(pointlocs, crs(VIMosaic))
             # Which ones are inside the UTM zone?
@@ -166,5 +166,6 @@ LoadVITS = function(pointlocs, vi="EVI_8d_Int16", sourcedir="/data/users/Public/
 # Merge the matrix of unique points with the reference data, to get all years info
 MergeAllYears = function(df, data)
 {
-    return(merge(df, as.data.frame(data), "sample_id"))
+    Result = merge(df, st_set_geometry(data, NULL), "sample_id")
+    return(Result[order(Result$sample_id, Result$reference_year),])
 }
