@@ -1,0 +1,204 @@
+---
+title: "CGLOPS ROW Priority testing"
+author: "Dainius"
+date: '2020-03-20'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(DT)
+source("../src/bfast-cal/01-preprocess.r")
+source("../src/bfast-cal/02-detectbreaks.r")
+source("../src/bfast-cal/03-batchprocessing.r")
+source("../src/bfast-cal/perclass.r")
+source("../src/bfast-cal/utils.r")
+registerDoParallel(cores=4)
+```
+```{r load, cache=TRUE}
+GlobalData = LoadReferenceData("../data/Data_Global.csv")
+```
+
+```{r getrow}
+ROWTS = LoadVITS(GlobalData, "", "/data/cgl_lc_bfast/Modis_VIs_ROWPR_UTM_FINAL/", "ROWPR")
+ROWData = MergeAllYears(ROWTS, GlobalData)
+ROWData = ROWData[order(ROWData$sample_id, ROWData$reference_year),]
+CheckReferenceData(ROWData)
+ROWData = AddChangeClassCol(ROWData)
+```
+
+```{r globalplot}
+plot(st_geometry(ROWData))
+```
+
+```{r table}
+sort(table(ROWData$changeclass), TRUE)
+```
+
+```{r trees_subset}
+TreesChange = FilterChange(ROWData, "tree to grassland")
+```
+
+```{r samples}
+ChangeSamples = unique(TreesChange[TreesChange$sample_id %in% TreesChange[TreesChange$changeclass %in% "tree to grassland",]$sample_id,]$sample_id)
+length(ChangeSamples)
+```
+
+Let's look at 30 random points:
+
+```{r plot_bfast1}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=3, scrange=NULL, plot=TRUE, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+If we use order 2 LWZ:
+
+```{r plot_bfast_order2_lwz}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=2, scrange=NULL, plot=TRUE, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+This is clearly much better.
+
+Try with trend only:
+
+```{r plot_bfast_trend_lwz}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=1, scrange=NULL, plot=TRUE, formula=response~trend, main=Sample, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+Also overall better (even than order 2), only in places with a lot of seasonality at the end of the time series it tends to estimate breaks too early.
+
+Retry with BIC:
+
+```{r plot_bfast_bic}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=3, scrange=NULL, plot=TRUE, breaks="BIC", TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+Too many breaks, and not as sensitive as trend, but also not too bad
+
+BIC with order 2:
+
+```{r plot_bfast_order2_bic}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=2, scrange=NULL, plot=TRUE, breaks="BIC", formula=response~trend+harmon, main=Sample, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+Much better, may be better than trend LWZ
+
+```{r plot_bfast_trend_bic}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=1, scrange=NULL, plot=TRUE, breaks="BIC", formula=response~trend, main=Sample, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+Detects even the really tough ones, but breaks down when there is strong seasonality. Choose this for max sensitivity.
+
+What if we use season to give very slight seasonality?
+
+```{r plot_bfast_trendseason_lwz}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=1, scrange=NULL, plot=TRUE, formula=response~trend+season, seasonfreq = 0.3, main=Sample, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+Decent, but not sensitive enough
+
+```{r plot_bfast_trendseason_bic}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=1, scrange=NULL, plot=TRUE, formula=response~trend+season, seasonfreq = 0.3, breaks = "BIC", main=Sample, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+Also not bad, misses a few but not much
+
+And if we use fewer seasonal dummies:
+
+```{r plot_bfast_trendseason_02_bic}
+for (Sample in ChangeSamples[seq(1, length(ChangeSamples), 10)])
+{
+    print(Sample)
+    SampleTS = GetMatrixFromSF(TreesChange[TreesChange$sample_id==Sample,])[1,]
+    MODDetectBreaks(GetTS(SampleTS, frequency = 23), order=1, scrange=NULL, plot=TRUE, formula=response~trend+season, seasonfreq = 0.2, breaks = "BIC", main=Sample, TargetYears=ROWData[ROWData$sample_id==Sample & ROWData$change_at_300m=="yes", ]$reference_year)
+}
+```
+
+Not as good, too many breaks.
+
+# Mass statistics
+
+Let's run bfast0n using the above and see what the statistics are:
+
+```{r baseline-stat-comparison, cache=TRUE}
+Result = TestParams(list(
+    list(order=3, scrange=NULL),
+    list(order=1, formula=response~trend, scrange=NULL),
+    list(breaks="BIC", order=2),
+    list(breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=NULL)
+    ), data=ROWData)
+```
+
+```{r baseline-stats, results = "hide", cache=TRUE}
+ResultBICO2 = TestMODBreakpointDetection(ROWData, breaks="BIC", order=2, scrange=NULL)
+```
+
+```{r}
+datatable(rbind(FPStatsPerParam(Result), `breaks BIC, order 2, scrange NULL`=FPStats(ResultBICO2)))
+datatable(FPStatsPerClass(ResultBICO2))
+```
+
+It appears that seasonal dummies are overall better, check bins
+
+```{r seasonal-comparison, cache=TRUE}
+ResultSeason = TestParams(list(
+    list(breaks="LWZ", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=NULL),
+    list(breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season),
+    list(breaks="BIC", order=1, seasonfreq = 0.2, formula=response~trend+season, scrange=NULL),
+    list(breaks="BIC", order=1, seasonfreq = 0.5, formula=response~trend+season, scrange=NULL)
+    ), data=ROWData)
+
+```
+
+```{r}
+datatable(FPStatsPerParam(ResultSeason))
+```
+
+
+It seems that BIC with 7 bins (0.3*23) works best if we want to keep a balance between sensitivity and specificity. How does that affect the per-class statistics?
+
+```{r perclass-stats}
+for (call in unique(Result$call))
+{
+    print(call)
+    datatable(FPStatsPerClass(Result[Result$call==call,]))
+}
+```
