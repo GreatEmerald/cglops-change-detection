@@ -46,10 +46,6 @@ TestParams = function(ParamLists, comment="", data)
 {
     Result = foreach(ParamList = ParamLists, .combine=rbind, .multicombine = TRUE, .verbose=TRUE) %dopar%
     {
-        # Filter out 2015 and 2018, former can't change and latter can't be detected
-        # NB: this needs to change depending on time series length!
-        data = data[data$reference_year %in% 2016:2017,]
-        
         callstring = paste(names(ParamList), ParamList, collapse=", ")
         ParamList$plot = FALSE
         ParamList$VITS = data
