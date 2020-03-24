@@ -17,14 +17,27 @@ registerDoParallel(cores=4)
 ```{r load, cache=TRUE}
 GlobalData = LoadReferenceData("../data/Data_Global.csv")
 ```
+```{r extractdata}
+GlobalTS = LoadVITS(GlobalData, "", "/data/cgl_lc_bfast/Modis_VIs_GLOBAL_UTM_FINAL/", "Global")
+```
+```{r, cache=TRUE}
+GlobalData = MergeAllYears(GlobalData, GlobalTS)
+CheckReferenceData(GlobalData)
+```
+
 ```{r addchangetypes}
+GlobalData$continent = NULL
+names(GlobalData)[names(GlobalData)=="field_30"] = "continent"
+table(GlobalData$continent)
+GlobalData[GlobalData$dominant_lc=="wetland_hebaceous",]$dominant_lc = "wetland_herbaceous"
 GlobalData = AddChangeClassCol(GlobalData)
 GlobalData = AddChangeProcessCol(GlobalData)
 GlobalData = GlobalData[GlobalData$reference_year %in% 2016:2018,] # Discard any changes in 2015, reference does not track that
 ```
 
 ```{r}
-table(CombinedData$changeprocess)
+table(GlobalData$changeprocess)
+sort(table(GlobalData$changeclass), decreasing = TRUE)
 ```
 
 # Perform mass statistics
@@ -33,28 +46,63 @@ table(CombinedData$changeprocess)
 ResultBaseline = TestParams(list(
     list(order=3, scrange=NULL),
     list(order=1, formula=response~trend, scrange=NULL),
-    list(breaks="BIC", order=2),
+    list(breaks="BIC", order=1, formula=response~trend),
     list(breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=NULL)
     ), data=GlobalData)
 ```
+## Overall results
 
 ```{r}
+rm(GlobalData)
+gc()
 datatable(FPStatsPerParam(ResultBaseline))
 ```
 
-```{r perclass-stats}
-for (call in unique(ResultBaseline$call))
-{
-    print(call)
-    datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==call,]))
-}
+## Results per class
+
+```{r perclass-stats, cache=TRUE}
+PCS = lapply(unique(ResultBaseline$call), function(x) FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,], cl=2))
+```
+```{r}
+htmltools::tagList(lapply(1:length(PCS), function(x)datatable(PCS[x], caption=unique(ResultBaseline$call)[x])))
 ```
 
-```{r perprocess-stats}
-for (call in unique(ResultBaseline$call))
-{
-    print(call)
-    datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==call,], column = "changeprocess"))
-}
+The improvements are across the board, rather than in particular classes, with a few exceptions.
+
+## Results per change process
+
+```{r perprocess-stats, cache=TRUE}
+PPS = lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,], column = "changeprocess", cl=2), caption=x))
+```
+```{r}
+htmltools::tagList(PPS)
 ```
 
+As expected, between vegetation and non-vegetation it's much easier, and between vegetation is the hardest.
+
+## Results per continent
+
+```{r percontinent-stats}
+htmltools::tagList(lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerContinent(ResultBaseline[ResultBaseline$call==x,]), caption=x, cl=2)))
+```
+
+## Masking out unvegetated pixels
+
+What if we don't run BFAST on unvegetated pixels?
+```{r postprocess-vegetated}
+ResultBaseline = AddVICol(ResultBaseline)
+```
+
+```{r vegetated15-stats}
+ResultVegetated = ResultBaseline
+ResultVegetated[ResultVegetated$nirv < 15,]$bfast_guess = FALSE
+datatable(FPStatsPerParam(ResultVegetated))
+```
+
+What if we use a threshold of 0?
+
+```{r vegetated0-stats}
+ResultVegetated = ResultBaseline
+ResultVegetated[ResultVegetated$nirv <= 0,]$bfast_guess = FALSE
+datatable(FPStatsPerParam(ResultVegetated))
+```

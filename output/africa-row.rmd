@@ -50,6 +50,7 @@ rm(AfricaData)
 rm(ROWData)
 gc()
 table(CombinedData$changeprocess)
+table(CombinedData$continent)
 ```
 
 # Perform mass statistics
@@ -66,6 +67,13 @@ ResultBaseline = TestParams(list(
 ```{r}
 # Discard changes outside the range
 ResultBaseline = ResultBaseline[ResultBaseline$reference_year %in% 2016:2017,]
+```
+
+```{r}
+# Work around a bug without clearing cache
+ResultBaseline$continent = NULL
+ResultBaseline = merge(ResultBaseline, data.frame(sample_id=CombinedData[!duplicated(CombinedData$sample_id),]$sample_id, continent=CombinedData[!duplicated(CombinedData$sample_id),]$continent), by="sample_id")
+table(ResultBaseline$continent)/4
 ```
 
 ## Overall results
