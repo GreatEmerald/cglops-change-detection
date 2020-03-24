@@ -34,7 +34,7 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
                            magstat="RMSD", magthreshold=-Inf, coefcomponent="trend",
                            coefthresholds=c(0, 0), plot=FALSE, quiet=FALSE, order=3,
                            formula=response ~ harmon + trend, TargetYears=NULL,
-                           seasonfreq=0.5, ...)
+                           seasonfreq=0.5, breaknumthreshold=Inf, altformula=NULL, ...)
 {
     # The input should be a single row of a matrix.
     if (!is.ts(InputTS))
@@ -70,6 +70,17 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
         bpOptim = breakpoints(bp, breaks=breaks) # Get breakpoint time
         
         if (length(bpOptim$breakpoints) > 0 && !all(is.na(bpOptim$breakpoints))) {
+            # Are we overfitting? If so, try running with altformula
+            if (length(bpOptim$breakpoints) > breaknumthreshold)
+            {
+                return(MODDetectBreaks(InputTS=InputTS, scrange=scrange, scsig=scsig,
+                    breaks=breaks, sctype=sctype, maginterval=maginterval,
+                    magcomponent=magcomponent, magstat=magstat, magthreshold=magthreshold,
+                    coefcomponent=coefcomponent, coefthresholds = coefthresholds, plot=plot,
+                    quiet=quiet, order=order, formula = altformula, TargetYears=TargetYears,
+                    seasonfreq=seasonfreq, breaknumthreshold = Inf, ...))
+            }
+            
             # Get magnitudes and coefficients of each break
             bpMag = magnitude(bp, breaks=breaks, interval=maginterval, component=magcomponent)$Mag
             coefs = coef(bp, breaks=breaks)
