@@ -1,4 +1,5 @@
 library(pbapply)
+source("../src/bfast-cal/utils.r")
 
 # Create a change class column
 AddChangeClassCol = function(data)
@@ -32,6 +33,18 @@ AddChangeProcessCol = function(data)
     ChangeProcesses[VegetationChange[,1] & VegetationChange[,2]] = "between vegetation"
     ChangeProcesses[is.na(data$changeclass)] = NA
     return(cbind(data, changeprocess = as.factor(ChangeProcesses)))
+}
+
+#' Add a column of mean VI to a given sf data.frame
+#' 
+#' @param data Input data.frame
+#' @param column Name of the new column
+#' @return An sf data.frame with an extra column
+AddVICol = function(data, stat=median, column="nirv")
+{
+    TSMat = GetMatrixFromSF(data)
+    data[[column]] = apply(TSMat, 1, stat, na.rm=TRUE)
+    return(data)
 }
 
 # Get a data frame only with the particular class of change and all the no-changes
