@@ -23,7 +23,7 @@ VectorisedIsBreakInTargetYear = function(BreakList, threshold=0.5, TY=TargetYear
 
 
 # 5) Get statistics.
-FPStats = function(predictions, truth = NULL)
+FPStats = function(predictions, truth = NULL, round=3)
 {
     # If we get a data.frame, try to automagically determine what is predicted and what is true
     if (is.data.frame(predictions) && is.null(truth))
@@ -45,17 +45,21 @@ FPStats = function(predictions, truth = NULL)
     # We predicted no break, but there was one (we missed it)
     FalseNegativeCount = sum(!predictions & truth, na.rm=TRUE)
     # Percent of true positives out of all change
-    Sensitivity = TruePositiveCount / (TruePositiveCount + FalseNegativeCount) # Previously TruePositiveRate
+    Sensitivity = TruePositiveCount / (TruePositiveCount + FalseNegativeCount) # AKA Recall, Previously TruePositiveRate
     Specificity = TrueNegativeCount / (TrueNegativeCount + FalsePositiveCount)
     # Percent of false positive out of no change
     FalsePositiveRate = FalsePositiveCount / sum(!truth, na.rm=TRUE) # False positive rate or alpha or p-value or Type I Error
     PositiveProportion = TruePositiveCount / FalsePositiveCount
     PositiveLikelihood = Sensitivity / FalsePositiveRate # Likelihood Ratio for Positive Tests
-    PositivePredictiveValue = TruePositiveCount / (TruePositiveCount + FalsePositiveCount)
+    Precision = TruePositiveCount / (TruePositiveCount + FalsePositiveCount) # AKA positive predictive value
     Accuracy = (TruePositiveCount + TrueNegativeCount) / length(truth)
+    F1Score = 2 * (Precision * Sensitivity)/ (Precision + Sensitivity)
     return(data.frame(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount,
-                      Sensitivity, Specificity, FalsePositiveRate, PositiveProportion, PositiveLikelihood,
-                      PositivePredictiveValue, Accuracy))
+        Sensitivity=round(Sensitivity, round), Specificity=round(Specificity, round),
+        Precision=round(Precision, round), F1Score=round(F1Score, round),
+        FalsePositiveRate=round(FalsePositiveRate, round),
+        PositiveProportion=round(PositiveProportion, round),
+        PositiveLikelihood=round(PositiveLikelihood, round), Accuracy=round(Accuracy, round)))
 }
 
 #' Utility to run FPStats() on combined dataframes from TestParams()
