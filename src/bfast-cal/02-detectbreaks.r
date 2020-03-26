@@ -126,7 +126,8 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
             abline(v=Result, col="black")
         return(Result)
     } else {
-        print("too cloudy")
+        if (!quiet)
+            print("too cloudy")
         return(NA)
     }
 }

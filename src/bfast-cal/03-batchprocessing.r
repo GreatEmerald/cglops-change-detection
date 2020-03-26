@@ -6,21 +6,25 @@ source("../src/bfast-cal/04-validation.r")
 # Result is a logical vector saying how many times we accurately predicted a break,
 # and how many times not. One value per year.
 # VITS is the full VI TS, all years should be there.
-TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, ...)
+TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, ...)
 {
     # Output into a new column
     VITS$bfast_guess = NA
     
-    pbi = 0
-    pb = txtProgressBar(pbi, length(unique(VITS$sample_id)), style = 3)
+    if (!quiet) {
+        pbi = 0
+        pb = txtProgressBar(pbi, length(unique(VITS$sample_id)), style = 3)
+    }
     # Detect the breaks in a loop over unique points (don't want to run bfast multiple times)
     for (i in unique(VITS$sample_id))
     {
         SampleMatrix = GetMatrixFromSF(VITS[VITS$sample_id == i,])
         BreakTimes = MODDetectBreaks(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=TRUE)
         
+        if (!quiet) {
         pbi = pbi + 1
         setTxtProgressBar(pb, pbi)
+        }
         
         if (length(BreakTimes) < 2 && is.na(BreakTimes))
             next # Already set to NA
@@ -29,7 +33,8 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, ...)
             VITS[VITS$sample_id == i & VITS$year_fraction == year, "bfast_guess"] = IsBreakInTargetYear(BreakTimes, year, threshold)
         }
     }
-    close(pb)
+    if (!quiet)
+        close(pb)
     
     return(VITS)
 }
