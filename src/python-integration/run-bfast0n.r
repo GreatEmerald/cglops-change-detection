@@ -30,3 +30,5 @@ runBFAST0N = function(DataCube, ..., MissingValue=NA)
     
     return(BFAST0N_result)
 }
+
+# For max sensitivity, use runBFAST0N(breaks="BIC", scsig=Inf)
