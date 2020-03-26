@@ -52,10 +52,12 @@ ResultBaseline = TestParams(list(
 ```
 ## Overall results
 
+```{r baseline-stats, cache=TRUE}
+BS = FPStatsPerParam(ResultBaseline)
+```
+
 ```{r}
-rm(GlobalData)
-gc()
-datatable(FPStatsPerParam(ResultBaseline))
+datatable(BS)
 ```
 
 ## Results per class
@@ -64,7 +66,8 @@ datatable(FPStatsPerParam(ResultBaseline))
 PCS = lapply(unique(ResultBaseline$call), function(x) FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,], cl=2))
 ```
 ```{r}
-htmltools::tagList(lapply(1:length(PCS), function(x)datatable(PCS[x], caption=unique(ResultBaseline$call)[x])))
+htmltools::tagList(lapply(1:length(PCS), function(x)datatable(PCS[[x]], caption=unique(ResultBaseline$call)[x])))
+rm(PCS)
 ```
 
 The improvements are across the board, rather than in particular classes, with a few exceptions.
@@ -72,10 +75,11 @@ The improvements are across the board, rather than in particular classes, with a
 ## Results per change process
 
 ```{r perprocess-stats, cache=TRUE}
-PPS = lapply(unique(ResultBaseline$call), function(x) datatable(FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,], column = "changeprocess", cl=2), caption=x))
+PPS = lapply(unique(ResultBaseline$call), function(x) FPStatsPerClass(ResultBaseline[ResultBaseline$call==x,], column = "changeprocess", cl=2))
 ```
 ```{r}
-htmltools::tagList(PPS)
+htmltools::tagList(lapply(1:length(PPS), function(x)datatable(PPS[[x]], caption=unique(ResultBaseline$call)[x])))
+rm(PPS)
 ```
 
 As expected, between vegetation and non-vegetation it's much easier, and between vegetation is the hardest.
@@ -105,4 +109,113 @@ What if we use a threshold of 0?
 ResultVegetated = ResultBaseline
 ResultVegetated[ResultVegetated$nirv <= 0,]$bfast_guess = FALSE
 datatable(FPStatsPerParam(ResultVegetated))
+rm(ResultVegetated)
+rm(ResultBaseline)
+```
+
+# Round 2: season frequency and sctest testing
+
+```{r seasonality-comparison1, cache=TRUE}
+system.time(ResultSeasonality1 <- TestMODBreakpointDetection(GlobalData, breaks="BIC", order=1, seasonfreq = 0.2, formula=response~trend+season, scrange=NULL))
+```
+Takes 16078s (4.5 hours)
+```{r seasonality-comparison2, cache=TRUE}
+system.time(ResultSeasonality2 <- TestMODBreakpointDetection(GlobalData, breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.01))
+```
+Takes 6886s (2 hours)
+```{r seasonality-comparison3, cache=TRUE}
+system.time(ResultSeasonality3 <- TestMODBreakpointDetection(GlobalData, breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.01))
+```
+Takes 5935s (1.6 hours)
+```{r seasonality-comparison4, cache=TRUE}
+system.time(ResultSeasonality4 <- TestMODBreakpointDetection(GlobalData, breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.005))
+```
+Takes 5309s (1.5 hours)
+
+## Overall results
+
+```{r}
+AddExtraCols = function(data)
+{
+    data = AddVICol(data)
+    data$changed = data$change_at_300m == "yes"
+    data$comment = ""
+    return(data)
+}
+ResultSeasonality1 = AddExtraCols(ResultSeasonality1)
+ResultSeasonality1$call = "breaks BIC, seasonfreq = 0.2, formula=response~trend+season, scrange=NULL"
+ResultSeasonality2 = AddExtraCols(ResultSeasonality2)
+ResultSeasonality2$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.01"
+ResultSeasonality3 = AddExtraCols(ResultSeasonality3)
+ResultSeasonality3$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.01"
+ResultSeasonality4 = AddExtraCols(ResultSeasonality4)
+ResultSeasonality4$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.005"
+```
+
+```{r seasonality-stats1, cache=TRUE}
+RS1 = FPStatsPerParam(rbind(ResultSeasonality1, ResultSeasonality2, ResultSeasonality3, ResultSeasonality4))
+```
+```{r}
+datatable(rbind(BS, RS1))
+```
+
+```{r include=FALSE, results='hide'}
+rm(ResultSeasonality1, ResultSeasonality2, ResultSeasonality3, ResultSeasonality4)
+gc()
+```
+
+# Round 3: additional sctest tests
+
+Seasonality might also be possible to optimise, but focus on runtime for now because the results are very different.
+
+```{r sctest-comparison1, cache=TRUE}
+system.time(ResultSeasonality5 <- TestMODBreakpointDetection(GlobalData, quiet=TRUE, breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.1))
+```
+Took 11000s (3 hours)
+```{r}
+ResultSeasonality5 = AddExtraCols(ResultSeasonality5)
+ResultSeasonality5$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.1"
+```
+```{r sctest-comparison2, results='hide', cache=TRUE}
+system.time(ResultSeasonality6 <- TestMODBreakpointDetection(GlobalData, quiet=TRUE, breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.1))
+```
+```{r}
+ResultSeasonality6 = AddExtraCols(ResultSeasonality6)
+ResultSeasonality6$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.1"
+```
+```{r seasonality-stats2, cache=TRUE}
+RS2 = FPStatsPerParam(rbind(ResultSeasonality5, ResultSeasonality6))
+```
+```{r include=FALSE, results='hide'}
+rm(ResultSeasonality5, ResultSeasonality6)
+gc()
+```
+
+```{r sctest-comparison3, cache=TRUE}
+system.time(ResultSeasonality7 <- TestMODBreakpointDetection(GlobalData, quiet=TRUE, breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.3))
+```
+Took 14527s (4 hours)
+```{r}
+ResultSeasonality7 = AddExtraCols(ResultSeasonality7)
+ResultSeasonality7$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.3"
+```
+```{r sctest-comparison4, cache=TRUE}
+system.time(ResultSeasonality8 <- TestMODBreakpointDetection(GlobalData, quiet=TRUE, breaks="BIC", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.5))
+```
+Took 15671s (4.35 hours)
+```{r}
+ResultSeasonality8 = AddExtraCols(ResultSeasonality8)
+ResultSeasonality8$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2014, 2020), scsig=0.5"
+```
+```{r seasonality-stats3, cache=TRUE}
+RS3 = FPStatsPerParam(rbind(ResultSeasonality7, ResultSeasonality8))
+```
+
+```{r}
+datatable(rbind(BS, RS1, RS2, RS3))
+```
+
+```{r include=FALSE, results='hide'}
+rm(ResultSeasonality7, ResultSeasonality8)
+gc()
 ```
