@@ -2,12 +2,15 @@ library(foreach)
 library(doParallel)
 source("../src/bfast-cal/04-validation.r")
 
-# 4c) Wrapper for running 3+4 in one.
-# Result is a logical vector saying how many times we accurately predicted a break,
-# and how many times not. One value per year.
-# VITS is the full VI TS, all years should be there.
-TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, ...)
+#' 4c) Wrapper for running 3+4 in one.
+#' @return data.frame augmented with a column "bfast_guess" that shows what BFAST guessed.
+#' @param VITS Full VI TS data.frame, all years should be there.
+#' @param threshold Let for considering whether the break was detected correctly or not.
+TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, DetectFunction=MODDetectBreaks, ...)
 {
+    # Parse function name
+    if (!is.function(DetectFunction) && is.character(DetectFunction))
+        DetectFunction = eval(parse(text="TestMODMonitor"))
     # Output into a new column
     VITS$bfast_guess = NA
     
@@ -19,7 +22,7 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, .
     for (i in unique(VITS$sample_id))
     {
         SampleMatrix = GetMatrixFromSF(VITS[VITS$sample_id == i,])
-        BreakTimes = MODDetectBreaks(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=TRUE)
+        BreakTimes = DetectFunction(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=TRUE)
         
         if (!quiet) {
         pbi = pbi + 1

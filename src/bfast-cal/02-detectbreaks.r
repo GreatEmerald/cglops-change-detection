@@ -158,25 +158,49 @@ TestMODttest = function(i, ChangedVITS, TargetYears=AllTargetYears, sig=0.05)
     }
 }
 
-# 3c) BFAST Monitor
-TestMODMonitor = function(i, ChangedVITS, TargetYears=AllTargetYears, threshold=0.25, cloud_threshold=42, ...)
+#' 3c) BFAST Monitor break detection function
+#' 
+#' @param InputTS matrix or ts, input time series
+#' @param monitor_years vector of starts of monitoring periods
+#' @param monitor_length Length of monitoring period, in years
+#' @param cloud_threshold Minimal number of observations to run the algorithm
+#' @param TargetYears Time of breaks as reported by reference, for plotting.
+#' @param quiet Suppress output
+#' @param plot Plot diagnostic plots, one per monitor_years
+#' @param ... Additional arguments for bfastmonitor
+TestMODMonitor = function(InputTS, monitor_years=2016:2018, monitor_length=1.25,
+                          cloud_threshold=42, TargetYears=NULL, quiet=FALSE, plot=FALSE, ...)
 {
-    MyDates = dates
-    Point1TS = ChangedVITS[i, ]
-    TargetYear = TargetYears[i]
-    if (is.na(TargetYear))
-        TargetYear = 2016
-    Observations = sum(!is.na(Point1TS))
-    print(paste("Observations for point:", Observations))
-    #plot(Point1TS~MyDates, type="l"); abline(v=as.POSIXct(as.Date("2017-01-01")))
-    if (Observations > cloud_threshold) {
-        P1TS = bfastts(Point1TS, MyDates, "10-day")
-        P1BM = bfastmonitor(P1TS, TargetYear-threshold, ...)
-        if (is.na(P1BM$breakpoint))
-            return(FALSE)
-        return(P1BM$breakpoint < TargetYear+1+threshold)
-    } else {
-        print("too cloudy")
+    # The input should be a single row of a matrix.
+    if (!is.ts(InputTS))
+        InputTS = GetTS(InputTS) # Convert into a ts object
+    
+    Observations = sum(!is.na(InputTS))
+    if (!quiet)
+        print(paste("Observations for point:", Observations))
+    if (Observations < cloud_threshold)
+    {
+        if (!quiet)
+            print("too cloudy")
         return(NA)
     }
+    
+    Result = NULL
+    for (StartYear in monitor_years)
+    {
+        # Cut time series to length
+        ShortTS = window(InputTS, end=StartYear+monitor_length)
+        BM = bfastmonitor(ShortTS, StartYear, ...)
+        if (plot)
+        {
+            plot(BM)
+            abline(v=TargetYears, col="blue")
+        }
+        # It can happen that the break is detected early next year, then we just discard those
+        if (!is.na(BM$breakpoint) && BM$breakpoint < StartYear+1)
+            Result = c(Result, BM$breakpoint)
+    }
+    if (length(Result) < 1)
+        return(FALSE)
+    return(Result)
 }
