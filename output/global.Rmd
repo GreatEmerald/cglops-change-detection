@@ -210,12 +210,57 @@ ResultSeasonality8$call = "breaks BIC, seasonfreq = 0.3, formula=response~trend+
 ```{r seasonality-stats3, cache=TRUE}
 RS3 = FPStatsPerParam(rbind(ResultSeasonality7, ResultSeasonality8))
 ```
-
-```{r}
-datatable(rbind(BS, RS1, RS2, RS3))
-```
-
 ```{r include=FALSE, results='hide'}
 rm(ResultSeasonality7, ResultSeasonality8)
+gc()
+```
+
+# Final set of ultraconservative statistics
+
+```{r final-ultraconservative, cache=TRUE}
+system.time(ResultUltraconservative <- TestMODBreakpointDetection(GlobalData, quiet=TRUE, breaks="LWZ", order=1, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.01))
+```
+```{r}
+ResultUltraconservative = AddExtraCols(ResultUltraconservative)
+ResultUltraconservative$call = "breaks LWZ, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.01"
+```
+```{r ultraconservative-stats, cache=TRUE}
+RUC = FPStats(ResultUltraconservative)
+```
+```{r}
+datatable(rbind(BS, RS1, RS2, RS3, "breaks LWZ, seasonfreq = 0.3, formula=response~trend+season, scrange=c(2009, 2020), scsig=0.01"=RUC))
+```
+
+## Results per class, ultraconservative
+
+```{r perclass-stats-ultraconservative, cache=TRUE}
+PCUC = FPStatsPerClass(ResultUltraconservative, cl=2)
+```
+```{r}
+datatable(PCUC)
+```
+
+The improvements are across the board, rather than in particular classes, with a few exceptions.
+
+## Results per change process
+
+```{r perprocess-stats-ultraconservative, cache=TRUE}
+PPUC = FPStatsPerClass(ResultUltraconservative, cl=2, column="changeprocess")
+```
+```{r}
+datatable(PPUC)
+```
+
+As expected, between vegetation and non-vegetation it's much easier, and between vegetation is the hardest.
+
+## Results per continent
+
+```{r percontinent-stats-ultraconservative}
+datatable(FPStatsPerContinent(ResultUltraconservative, cl=2))
+```
+
+
+```{r include=FALSE, results='hide'}
+rm(ResultUltraconservative)
 gc()
 ```
