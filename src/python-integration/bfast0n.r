@@ -4,17 +4,6 @@ library(strucchange)
 
 # Module only containing the bfast0n function
 
-EnableFastBfast = function()
-{
-    if (exists("set_fast_options"))
-    {
-        print("Using fast BFAST")
-        set_fast_options()
-        # Disable bfastts modifications due to issue #2
-        options(bfast.use_bfastts_modifications=FALSE)
-    } else print("Using reference BFAST, install appelmar/bfast for a speed increase")
-}
-
 BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, Order=1,
                          t0 = as.Date("2014-01-01"), NoBreakValue = -9999, breaks="LWZ",
                          formula = response~trend+season, seasonfreq = 0.3, scsig=0.01)
