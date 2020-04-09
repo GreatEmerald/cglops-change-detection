@@ -22,6 +22,7 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, D
     for (i in unique(VITS$sample_id))
     {
         SampleMatrix = GetMatrixFromSF(VITS[VITS$sample_id == i,])
+        #print(paste("Processing sample", i))
         BreakTimes = DetectFunction(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=TRUE)
         
         if (!quiet) {

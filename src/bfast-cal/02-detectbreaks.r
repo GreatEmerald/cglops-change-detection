@@ -175,7 +175,7 @@ TestMODMonitor = function(InputTS, monitor_years=2016:2018, monitor_length=1.25,
     if (!is.ts(InputTS))
         InputTS = GetTS(InputTS) # Convert into a ts object
     
-    Observations = sum(!is.na(InputTS))
+    Observations = sum(!is.na(window(InputTS, end=min(monitor_years)+monitor_length)))
     if (!quiet)
         print(paste("Observations for point:", Observations))
     if (Observations < cloud_threshold)
@@ -190,7 +190,14 @@ TestMODMonitor = function(InputTS, monitor_years=2016:2018, monitor_length=1.25,
     {
         # Cut time series to length
         ShortTS = window(InputTS, end=StartYear+monitor_length)
-        BM = bfastmonitor(ShortTS, StartYear, ...)
+        BM = try(bfastmonitor(ShortTS, StartYear, ...))
+        
+        if ("try-error" %in% class(BM)) {
+            print("An error has occurred:")
+            print(BM)
+            next # Assume no break
+        }
+        
         if (plot)
         {
             plot(BM)
