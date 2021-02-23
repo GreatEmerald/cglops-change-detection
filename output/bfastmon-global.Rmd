@@ -38,13 +38,20 @@ GlobalData = GlobalData[GlobalData$reference_year %in% 2016:2018,] # Discard any
 ```
 
 ```{r}
-(ExampleSample = sample(GlobalData$sample_id, 1))
+#(ExampleSample = sample(GlobalData[GlobalData$change_at_300m=="yes",]$sample_id, 1))
+#(ExampleSample = 1376980) # Highly seasonal case
+#(ExampleSample = 1375731) # Recent clearcut case, break correct
+#(ExampleSample = 1374787) # Older clearcut case, two breaks (which is according to the reference)
+#(ExampleSample = 1373925) # Regrowth, correctly detected clearcut but not end of regrowth
+#(ExampleSample = 1373488) # Regrowth, only one event in reference; two breaks detected
+#(ExampleSample = 1372732) # Regrowth, 2 breaks detected, 3 in reference
 ExampleTS = GlobalData[GlobalData$sample_id == ExampleSample,]
+SampleTS = GetMatrixFromSF(ExampleTS)[1,]
 TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE)
 ```
 
 ```{r}
-# Incorrectly implemented!
+# Need a recent version of bfast to make sure the bug is fixed (season should be a factor and not a nubmer)
 TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend+season)
 ```
 
@@ -56,8 +63,8 @@ TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, order=2)
 TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, order=1)
 ```
 
-```{r}
-TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend)
+```{r trend-model}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, level=0.001, history="all")
 ```
 
 ```{r}
@@ -72,12 +79,30 @@ TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend
 TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, type="ME")
 ```
 
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend+season, history="all")
+```
+
 ```{r default-test, eval=FALSE, include=FALSE}
 DefaultsResult = TestMODBreakpointDetection(GlobalData, DetectFunction=TestMODMonitor)
 ```
 
 ```{r specific-test, eval=FALSE, include=FALSE}
 DefaultsResult = TestMODBreakpointDetection(GlobalData, DetectFunction=TestMODMonitor, formula=response~trend, level=0.002, type="ME")
+```
+
+## Winning methods
+
+### Trend model
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, level=0.001, history="all")
+```
+
+### Seasonal model
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response ~ trend + season, level=0.001, history="all", sbins=4, h=0.5)
 ```
 
 # Mass statistics

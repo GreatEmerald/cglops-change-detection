@@ -21,6 +21,43 @@ VectorisedIsBreakInTargetYear = function(BreakList, threshold=0.5, TY=TargetYear
     return(sapply(i, function(i){return(IsBreakInTargetYear(BreakList[[i]], TY[i], threshold=threshold))}))
 }
 
+#' 4c) A new version that takes all years as input and returns TP/FP/TN/FN.
+#' It is more accurate, as a point may no longer be both a TP and FP.
+#' @param PredictionDates Vector with predicted dates of breaks (year fractions)
+#' @param TruthDates      Vector with reference dates of breaks (year fractions)
+#' @param threshold       How much to allow the predictions to deviate while still considered correct (±years)
+#' @param period          Start and end date of the period of interest (without threshold)
+#' @return Vector with four values: TP, FP, TN, FN.
+BreakConfusionStats = function(PredictionDates, TruthDates, threshold=0.5, period=c(2016, 2019))
+{
+    # Remove all predictions that fall outside of the period
+    PredictionDates = PredictionDates[PredictionDates > min(period) - threshold & PredictionDates < max(period) + threshold]
+    
+    PointDistance = function(point, points) any(abs(point - points) <= threshold+1e-13)
+    
+    # Algorithm: each category requires one rule to calculate.
+    # 1) False positives:
+    # Is there a true break within threshold of each predicted break?
+    TruthCloseToPred = sapply(PredictionDates, PointDistance, TruthDates)
+    # Any predictions not close to a real break is a false positive
+    FP = sum(!TruthCloseToPred)
+    
+    # 2) False negatives:
+    # Is there a predicted break within threshold of each true break?
+    PredCloseToTruth = sapply(TruthDates, PointDistance, PredictionDates)
+    # Any true break not close to a prediction is a false negative
+    FN = sum(!PredCloseToTruth)
+    
+    # 3) True positives:
+    # Any break that is close to another from both sets
+    TP = min(sum(TruthCloseToPred), sum(PredCloseToTruth))
+    
+    # 4) True negatives:
+    # The rest, given the total number of items we should have.
+    # e.g. 4 - (sum of above)
+    TN = floor(max(period) - min(period) + 2*threshold) - sum(FP, FN, TP)
+    return(c(TP=TP, TN=TN, FP=FP, FN=FN))
+}
 
 # 5) Get statistics.
 FPStats = function(predictions, truth = NULL, round=3)

@@ -14,7 +14,7 @@ plot.bfast0n = function(bp, bpp, breaks, bpMag=NULL, ...)
     
     # Get the requested breaks
     bpOptim = breakpoints(bp, breaks=breaks)
-    title(sub=paste("RSS:", round(bpOptim$RSS)))
+    #title(sub=paste("RSS:", round(bpOptim$RSS)))
     
     if (length(bpOptim$breakpoints) > 0 && !all(is.na(bpOptim$breakpoints))) {
         bpTimes = bpp[bpOptim$breakpoints, "time"]
@@ -24,3 +24,6 @@ plot.bfast0n = function(bp, bpp, breaks, bpMag=NULL, ...)
         arrows(bpTimes, bpY-bpMag[,"RMSD"], bpTimes, bpY+bpMag[,"RMSD"], length=0.05, angle=90, code=3, col="blue")
     }
 }
+
+# Simple plot of a data.frame row
+PlotData = function(data, ...) plot(c(GetMatrixFromSF(data)), type="l", ...)

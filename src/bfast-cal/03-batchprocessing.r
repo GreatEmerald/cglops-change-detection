@@ -10,7 +10,7 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, D
 {
     # Parse function name
     if (!is.function(DetectFunction) && is.character(DetectFunction))
-        DetectFunction = eval(parse(text="TestMODMonitor"))
+        DetectFunction = eval(parse(text=DetectFunction))
     # Output into a new column
     VITS$bfast_guess = NA
     

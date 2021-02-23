@@ -44,7 +44,7 @@ MODDetectBreaks = function(InputTS, scrange=c(2009, 2019), scsig=0.05, breaks="L
         print(paste("Observations for point:", Observations))
     h = ceiling(frequency(InputTS)) # Set h to number of observations per year, i.e. frequency of time series
     if (Observations > h*2) {
-        bpp = bfastpp(InputTS, order=order) # Preprocess the ts into a data.frame
+        bpp = bfastpp(InputTS, order=order, sbins=seasonfreq) # Preprocess the ts into a data.frame
         # Fix season when it's not an integer
         myseason = as.numeric(as.character(bpp$season)) # Deparse season again
         if (!all(is.na(myseason))) # If we failed to deparse, then we're using a fixed bfastpp already, no need to do anything
@@ -200,7 +200,7 @@ TestMODMonitor = function(InputTS, monitor_years=2016:2018, monitor_length=1.25,
         
         if (plot)
         {
-            plot(BM)
+            plot(BM, xlab="Time", ylab="NIRv * 255")
             abline(v=TargetYears, col="blue")
         }
         # It can happen that the break is detected early next year, then we just discard those
@@ -210,4 +210,35 @@ TestMODMonitor = function(InputTS, monitor_years=2016:2018, monitor_length=1.25,
     if (length(Result) < 1)
         return(FALSE)
     return(Result)
+}
+
+# Stand-alone sctest
+IsThereABreak = function(InputTS,
+    formula=response ~ harmon + trend, h=NULL, order=3,
+    scrange=c(2009, 2020), scsig=0.05, sctype="OLS-MOSUM")
+{
+    # The input should be a single row of a matrix.
+    # If not, make it one.
+    InputTS = c(GetMatrix(InputTS))
+    if (!is.ts(InputTS))
+        InputTS = GetTS(InputTS) # Convert into a ts object
+    if (is.null(h))
+        h = ceiling(frequency(InputTS)) # Yearly
+    
+    bpp = bfastpp(InputTS, order=order)
+    Observations = sum(!is.na(InputTS))
+    if (Observations < 42)
+    {
+        message(paste("Too few observations:", Observations))
+        return(NA)
+    }
+    
+    SCp = sctest(efp(formula,
+                    data=bpp[bpp$time > scrange[1] & bpp$time < scrange[2],],
+                    h=h/Observations, sctype=type))$p.value
+    message(paste("p-value is", SCp))
+    SC = SCp > scsig
+    if (is.null(SC) || is.na(SC)) return(NA)
+    if (SC) return(FALSE) # No break detected, return FALSE
+    return(TRUE)
 }

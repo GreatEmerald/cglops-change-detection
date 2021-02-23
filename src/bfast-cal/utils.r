@@ -35,3 +35,20 @@ GetMatrixFromSF = function(sf)
     TSNames = grep(glob2rx("X????.??.??"), names(sf), value = TRUE)
     as.matrix(as.data.frame(sf)[, TSNames])
 }
+
+# Same for lists (from apply on rows)
+GetMatrixFromList = function(mylist)
+{
+    # Assumes that the pattern of columns is XNNNN.NN.NN
+    TSIdx = grep(glob2rx("X????.??.??"), names(mylist))
+    t(as.matrix(unlist(mylist[TSIdx])))
+}
+
+# Generic
+GetMatrix = function(obj)
+{
+    if ("sf" %in% class(obj))
+        return(GetMatrixFromSF(obj))
+    if (is.list(obj))
+        return(GetMatrixFromList(obj))
+}
