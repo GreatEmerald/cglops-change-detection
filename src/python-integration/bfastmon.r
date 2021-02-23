@@ -11,8 +11,9 @@ BFMBreaks = function(pixel, MonitorStart=year(today(tzone="Europe/Brussels"))-1,
     
     # This is optimised for the dates that we have
     PixelTS = ts(pixel, start=DateStart, frequency=DateFrequency)
-    result = bfastmonitor(PixelTS, MonitorStart, formula=formula, level=level,
-                                   history=history, ...)
+    result = tryCatch(bfastmonitor(PixelTS, MonitorStart, formula=formula, level=level,
+                                   history=history, ...),
+        error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", toString(pixel), "\n")); return(NA)})
     if (all(is.na(result)) || is.null(result[["breakpoint"]])) {
         Results = NA
     } else {
