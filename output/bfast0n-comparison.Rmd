@@ -1,0 +1,134 @@
+---
+title: "BFAST0N comparison vs BFAST and BFASTMonitor"
+author: "Dainius Masiliūnas"
+date: "22/02/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(DT)
+library(pbapply)
+source("../src/bfast-cal/01-preprocess.r")
+source("../src/bfast-cal/02-detectbreaks.r")
+source("../src/bfast-cal/03-batchprocessing.r")
+source("../src/bfast-cal/perclass.r")
+source("../src/bfast-cal/utils.r")
+source("../src/utils/visualise_breakpoints.r")
+```
+```{r load, cache=TRUE}
+GlobalData = LoadReferenceData("../data/Data_Global.csv")
+```
+```{r extractdata}
+GlobalTS = LoadVITS(GlobalData, "", "/data/cgl_lc_bfast/Modis_VIs_GLOBAL_UTM_FINAL/", "Global")
+```
+```{r mergedata, cache=TRUE}
+GlobalData = MergeAllYears(GlobalData, GlobalTS)
+CheckReferenceData(GlobalData)
+```
+```{r addchangetypes}
+GlobalData$continent = NULL
+names(GlobalData)[names(GlobalData)=="field_30"] = "continent"
+table(GlobalData$continent)
+GlobalData[GlobalData$dominant_lc=="wetland_hebaceous",]$dominant_lc = "wetland_herbaceous"
+GlobalData = AddChangeClassCol(GlobalData)
+GlobalData = AddChangeProcessCol(GlobalData)
+GlobalData = GlobalData[GlobalData$reference_year %in% 2016:2018,] # Discard any changes in 2015, reference does not track that
+```
+
+```{r selectchange}
+ChangeData = GlobalData[GlobalData$sample_id %in% GlobalData[GlobalData$change_at_300m == "yes",]$sample_id,]
+```
+
+```{r}
+table(GlobalData$changeprocess)
+sort(table(GlobalData$changeclass), decreasing = TRUE)
+```
+
+# Overall statistics
+
+Number of unique locations:
+```{r}
+length(unique(GlobalData$sample_id))
+length(unique(GlobalData$location_id))
+nrow(GlobalData) / 3
+```
+
+Number of instances of change:
+
+```{r}
+sum(GlobalData$change_at_300m == "yes")
+sum(!is.na(GlobalData$changeclass))
+```
+
+Number of unique locations with change:
+
+```{r}
+length(unique(GlobalData[GlobalData$change_at_300m == "yes",]$sample_id))
+```
+
+Number of observations at locations with change:
+
+```{r}
+nrow(ChangeData)
+```
+
+Change to no change ratio:
+
+```{r}
+sum(ChangeData$change_at_300m == "yes") / nrow(ChangeData)
+```
+
+# Narrowing points down further
+
+Test all points with a strucchange test and discard those with no break in the time series altogether (NB: the break can be outside our scope of 2016-2018!)
+
+Example for one point:
+
+```{r getonebreak}
+PlotTS(ChangeData[1,])
+IsThereABreak(ChangeData[1,])
+```
+
+Run for all points and see how many remain (using defaults):
+
+```{r breakexists, cache=TRUE}
+suppressMessages({BreakExists = apply(ChangeData[!duplicated(ChangeData$sample_id),], 1, IsThereABreak)})
+sum(BreakExists, na.rm = TRUE)
+```
+
+How accurate is the sctest? Let's see a few examples:
+
+```{r}
+BreakExists[is.na(BreakExists)] = FALSE
+BreakIDs = unique(ChangeData$sample_id)[BreakExists]
+BreakExamples = sample(BreakIDs, 20)
+for (i in 1:20)
+    PlotTS(ChangeData[ChangeData$sample_id == BreakExamples[i],])
+```
+
+It is a bit lenient. We can survive even with ~10000 unique locations. Try harder.
+
+```{r}
+suppressMessages({BreakExists = apply(ChangeData[!duplicated(ChangeData$sample_id),], 1, IsThereABreak, scsig=0.001, scrange=c(2015, 2020))})
+sum(BreakExists, na.rm = TRUE)
+BreakExists[is.na(BreakExists)] = FALSE
+BreakIDs = unique(ChangeData$sample_id)[BreakExists]
+BreakExamples = sample(BreakIDs, 20)
+for (i in 1:20)
+    PlotTS(ChangeData[ChangeData$sample_id == BreakExamples[i],])
+```
+
+Save the smaller dataset to file so that we can go back to it later.
+
+```{r}
+BreakData = ChangeData[ChangeData$sample_id %in% BreakIDs,]
+st_write(BreakData, "../data/bfast0n-comparison-points.gpkg", delete_dsn = TRUE)
+rm(GlobalData, GlobalTS, ChangeData)
+```
+
+# Run BFAST0N on each unique location
+
+```{r}
+bf0nres = TestMODBreakpointDetection(BreakData[1:9,], scrange=NULL, breaks="BIC", plot=TRUE)
+bfmres = TestMODBreakpointDetection(BreakData[1:9,], DetectFunction = TestMODMonitor)
+```
