@@ -59,37 +59,49 @@ BreakConfusionStats = function(PredictionDates, TruthDates, threshold=0.5, perio
     return(c(TP=TP, TN=TN, FP=FP, FN=FN))
 }
 
-# 5) Get statistics.
+# 5) Get statistics from the prediction result.
+# This is generic enough to handle multiple formats.
 FPStats = function(predictions, truth = NULL, round=3)
 {
     # If we get a data.frame, try to automagically determine what is predicted and what is true
     if (is.data.frame(predictions) && is.null(truth))
     {
-        if ("change_at_300m" %in% names(predictions)) {
-            truth = predictions$change_at_300m == "yes"
-        } else if ("changed" %in% names(predictions)) {
-            truth = predictions$changed
-        } else stop("Could not determine the column with truth, pass truth explicitly")
-        predictions = predictions$bfast_guess
+        if ("bfast_guess" %in% names(predictions))
+        {
+            predictions = predictions$bfast_guess
+            if ("change_at_300m" %in% names(predictions)) {
+                truth = predictions$change_at_300m == "yes"
+            } else if ("changed" %in% names(predictions)) {
+                truth = predictions$changed
+            }
+        }
     }
-    
-    # We predicted a break and it was a break
-    TruePositiveCount = sum(predictions & truth, na.rm=TRUE)
-    # We predicted a break but there wasn't one (overprediction)
-    FalsePositiveCount = sum(predictions & !truth, na.rm=TRUE)
-    # We predicted no break, and there were none
-    TrueNegativeCount = sum(!predictions & !truth, na.rm=TRUE)
-    # We predicted no break, but there was one (we missed it)
-    FalseNegativeCount = sum(!predictions & truth, na.rm=TRUE)
+    # New version with stats already in the DF
+    if (all(c("TP", "TN", "FP", "TP") %in% names(predictions))) {
+        TruePositiveCount = sum(predictions$TP, na.rm=TRUE)
+        FalsePositiveCount = sum(predictions$FP, na.rm=TRUE)
+        TrueNegativeCount = sum(predictions$TN, na.rm=TRUE)
+        FalseNegativeCount = sum(predictions$FN, na.rm=TRUE)
+    } else {
+        # We predicted a break and it was a break
+        TruePositiveCount = sum(predictions & truth, na.rm=TRUE)
+        # We predicted a break but there wasn't one (overprediction)
+        FalsePositiveCount = sum(predictions & !truth, na.rm=TRUE)
+        # We predicted no break, and there were none
+        TrueNegativeCount = sum(!predictions & !truth, na.rm=TRUE)
+        # We predicted no break, but there was one (we missed it)
+        FalseNegativeCount = sum(!predictions & truth, na.rm=TRUE)
+    }
     # Percent of true positives out of all change
     Sensitivity = TruePositiveCount / (TruePositiveCount + FalseNegativeCount) # AKA Recall, Previously TruePositiveRate
     Specificity = TrueNegativeCount / (TrueNegativeCount + FalsePositiveCount)
     # Percent of false positive out of no change
-    FalsePositiveRate = FalsePositiveCount / sum(!truth, na.rm=TRUE) # False positive rate or alpha or p-value or Type I Error
+    FalsePositiveRate = FalsePositiveCount / (TrueNegativeCount + FalsePositiveCount) # False positive rate or alpha or p-value or Type I Error
     PositiveProportion = TruePositiveCount / FalsePositiveCount
     PositiveLikelihood = Sensitivity / FalsePositiveRate # Likelihood Ratio for Positive Tests
     Precision = TruePositiveCount / (TruePositiveCount + FalsePositiveCount) # AKA positive predictive value
-    Accuracy = (TruePositiveCount + TrueNegativeCount) / length(truth)
+    Accuracy = (TruePositiveCount + TrueNegativeCount) /
+        sum(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount)
     F1Score = 2 * (Precision * Sensitivity)/ (Precision + Sensitivity)
     return(data.frame(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount,
         Sensitivity=round(Sensitivity, round), Specificity=round(Specificity, round),

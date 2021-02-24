@@ -2,17 +2,26 @@ library(foreach)
 library(doParallel)
 source("../src/bfast-cal/04-validation.r")
 
-#' 4c) Wrapper for running 3+4 in one.
+#' 3c) Wrapper for running 3+4 in one.
 #' @return data.frame augmented with a column "bfast_guess" that shows what BFAST guessed.
 #' @param VITS Full VI TS data.frame, all years should be there.
 #' @param threshold Let for considering whether the break was detected correctly or not.
-TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, DetectFunction=MODDetectBreaks, ...)
+#' @param NewAccuracy Whether or not to use the new accuracy calculation method (4c)
+TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
+    DetectFunction=MODDetectBreaks, NewAccuracy=TRUE, ...)
 {
     # Parse function name
     if (!is.function(DetectFunction) && is.character(DetectFunction))
         DetectFunction = eval(parse(text=DetectFunction))
     # Output into a new column
-    VITS$bfast_guess = NA
+    if (!NewAccuracy) {
+        VITS$bfast_guess = NA
+    } else {
+        VITS$TP=NA
+        VITS$TN=NA
+        VITS$FP=NA
+        VITS$FN=NA
+    }
     
     if (!quiet) {
         pbi = 0
@@ -26,15 +35,21 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE, D
         BreakTimes = DetectFunction(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=TRUE)
         
         if (!quiet) {
-        pbi = pbi + 1
-        setTxtProgressBar(pb, pbi)
+            pbi = pbi + 1
+            setTxtProgressBar(pb, pbi)
         }
         
         if (length(BreakTimes) < 2 && is.na(BreakTimes))
             next # Already set to NA
-        for (year in as.data.frame(VITS)[VITS$sample_id == i,"year_fraction"])
-        {
-            VITS[VITS$sample_id == i & VITS$year_fraction == year, "bfast_guess"] = IsBreakInTargetYear(BreakTimes, year, threshold)
+        if (NewAccuracy) {
+            TruthDates = VITS[VITS$sample_id == i & VITS$change_at_300m == "yes",]$year_fraction
+            VITS[VITS$sample_id == i, c("TP", "TN", "FP", "FN")] =
+                BreakConfusionStats(BreakTimes, TruthDates, threshold = threshold)
+        } else {
+            for (year in as.data.frame(VITS)[VITS$sample_id == i,"year_fraction"])
+            {
+                VITS[VITS$sample_id == i & VITS$year_fraction == year, "bfast_guess"] = IsBreakInTargetYear(BreakTimes, year, threshold)
+            }
         }
     }
     if (!quiet)
