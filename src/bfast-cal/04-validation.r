@@ -31,20 +31,39 @@ VectorisedIsBreakInTargetYear = function(BreakList, threshold=0.5, TY=TargetYear
 BreakConfusionStats = function(PredictionDates, TruthDates, threshold=0.5, period=c(2016, 2019))
 {
     # Remove all predictions that fall outside of the period
-    PredictionDates = PredictionDates[PredictionDates > min(period) - threshold & PredictionDates < max(period) + threshold]
+    if (length(PredictionDates) > 0)
+        PredictionDates = PredictionDates[PredictionDates > min(period) - threshold & PredictionDates < max(period) + threshold]
     
     PointDistance = function(point, points) any(abs(point - points) <= threshold+1e-13)
     
     # Algorithm: each category requires one rule to calculate.
     # 1) False positives:
-    # Is there a true break within threshold of each predicted break?
-    TruthCloseToPred = sapply(PredictionDates, PointDistance, TruthDates)
+    TruthCloseToPred = if (length(TruthDates) <= 0) {
+        # If there is no true break, all predictions are far from truth
+        # and all predictions are false positives
+        rep(FALSE, length(PredictionDates))
+    } else if (length(PredictionDates) <= 0) {
+        # If there are no predictions, there are no false positives
+        logical(0)
+    } else {
+        # Is there a true break within threshold of each predicted break?
+        sapply(PredictionDates, PointDistance, TruthDates)
+    }
     # Any predictions not close to a real break is a false positive
     FP = sum(!TruthCloseToPred)
     
     # 2) False negatives:
-    # Is there a predicted break within threshold of each true break?
-    PredCloseToTruth = sapply(TruthDates, PointDistance, PredictionDates)
+    PredCloseToTruth = if (length(PredictionDates) <= 0) {
+        # If there is no prediction, all true breaks are far from predictions
+        # and all true breaks are false negatives
+        rep(FALSE, length(TruthDates))
+    } else if (length(TruthDates) <= 0) {
+        # If there are no true breaks, there are no false negatives
+        logical(0)
+    } else {
+        # Is there a predicted break within threshold of each true break?
+        sapply(TruthDates, PointDistance, PredictionDates)
+    }
     # Any true break not close to a prediction is a false negative
     FN = sum(!PredCloseToTruth)
     

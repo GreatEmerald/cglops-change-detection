@@ -43,8 +43,9 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
             next # Already set to NA
         if (NewAccuracy) {
             TruthDates = VITS[VITS$sample_id == i & VITS$change_at_300m == "yes",]$year_fraction
-            VITS[VITS$sample_id == i, c("TP", "TN", "FP", "FN")] =
-                BreakConfusionStats(BreakTimes, TruthDates, threshold = threshold)
+            Stats = BreakConfusionStats(BreakTimes, TruthDates, threshold = threshold)
+            for (Stat in c("TP", "TN", "FP", "FN"))
+                VITS[VITS$sample_id == i, ][[Stat]] = Stats[Stat]
         } else {
             for (year in as.data.frame(VITS)[VITS$sample_id == i,"year_fraction"])
             {

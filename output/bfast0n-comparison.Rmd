@@ -132,3 +132,10 @@ rm(GlobalData, GlobalTS, ChangeData)
 bf0nres = TestMODBreakpointDetection(BreakData[1:9,], scrange=NULL, breaks="BIC", plot=TRUE)
 bfmres = TestMODBreakpointDetection(BreakData[1:9,], DetectFunction = TestMODMonitor)
 ```
+
+New way to get accuracy statistics:
+
+```{r}
+bf0nres = TestMODBreakpointDetection(BreakData[1:9,], scrange=NULL, breaks="BIC", plot=TRUE, NewAccuracy = TRUE, threshold = 0.5)
+bfmres = TestMODBreakpointDetection(BreakData[1:9,], DetectFunction = TestMODMonitor, NewAccuracy = TRUE, threshold = 0.5)
+```
