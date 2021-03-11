@@ -212,10 +212,84 @@ TestMODMonitor = function(InputTS, monitor_years=2016:2018, monitor_length=1.25,
     return(Result)
 }
 
-# Stand-alone sctest
-IsThereABreak = function(InputTS,
-    formula=response ~ harmon + trend, h=NULL, order=3,
-    scrange=c(2009, 2020), scsig=0.05, sctype="OLS-MOSUM")
+#' Run the original BFAST on the VI time series.
+#' @param InputTS A matrix row of vegetation indices or a time series.
+#' @param stlplus Whether to use stlplus for decomposition.
+TestMODBFAST = function(InputTS, stlplus=TRUE, plot=FALSE, ...)
+{
+    if (!is.ts(InputTS))
+        InputTS = GetTS(InputTS) # Convert into a ts object
+    Observations = sum(!is.na(InputTS))
+    if (Observations < 10)
+        return(NA)
+    h = ceiling(frequency(InputTS))
+    
+    # Try to use stlplus first
+    if (stlplus)
+    {
+        bp = try(bfast(InputTS, decomp="stlplus", ...))
+        if ("try-error" %in% class(bp))
+        {
+            print(paste("Couldn't run stlplus, will retry without. Error was:", bp))
+        } else {
+            if (plot)
+                plot(bp)
+            return(GetBFASTOutput(bp))
+        }
+    }
+    
+    # Else interpolate and use stl
+    InputTS = na.approx(InputTS)
+    bp = try(bfast(InputTS, decomp="stl", ...))
+    if ("try-error" %in% class(bp))
+    {
+        print(paste("Couldn't run bfast, error was:", bp))
+        return(NA)
+    }
+    if (plot)
+        plot(bp)
+    return(GetBFASTOutput(bp))
+}
+
+# Util to extract output from an original BFAST model
+GetBFASTOutput = function(bp, ...)
+{
+    Result = NULL
+    LastIter = bp$output[[length(bp$output)]]
+    if (!bp$nobp$Vt)
+        Result = c(Result, time(LastIter$Vt)[!is.na(LastIter$Vt)][LastIter$bp.Vt$breakpoints])
+    if (!bp$nobp$Wt)
+        Result = c(Result, time(LastIter$Wt)[!is.na(LastIter$Wt)][LastIter$bp.Wt$breakpoints])
+    if (is.null(Result)) return(FALSE)
+    return(Result)
+}
+
+# Util to merge breaks less than 1 (or threshold) year(s) away
+# Recursive, control max recursion depth with mergemax
+MergeCloseBreaks = function(breakyears, threshold=1, mergemax=Inf)
+{
+    if (mergemax < 1 || length(breakyears) < 2)
+        return(breakyears)
+    
+    Dists = dist(breakyears)
+    
+    # Everything is already fine
+    if (min(Dists)+1e-8 > threshold)
+        return(breakyears)
+    
+    MergeYears = which(as.matrix(Dists)==min(Dists), arr.ind=TRUE)
+    # Replace first value with mean of two
+    breakyears[MergeYears[1,1]] = mean(breakyears[MergeYears[1,]])
+    # Remove second value
+    breakyears = breakyears[-MergeYears[1,2]]
+    # Continue removing...
+    return(MergeCloseBreaks(breakyears, threshold, mergemax-1))
+}
+
+# Function for running sctest with extra additions
+MySctest = function(InputTS,
+                    formula=response ~ harmon + trend, h=NULL, order=3,
+                    scrange=c(2009, 2020), scsig=0.05, sctype="OLS-MOSUM")
 {
     # The input should be a single row of a matrix.
     # If not, make it one.
@@ -233,9 +307,18 @@ IsThereABreak = function(InputTS,
         return(NA)
     }
     
-    SCp = sctest(efp(formula,
-                    data=bpp[bpp$time > scrange[1] & bpp$time < scrange[2],],
-                    h=h/Observations, sctype=type))$p.value
+    SCp = try(sctest(efp(formula,
+                     data=bpp[bpp$time > scrange[1] & bpp$time < scrange[2],],
+                     h=h/Observations, sctype=type))$p.value)
+    if (class(SCp) == "try-error")
+        return(NA)
+    return(SCp)
+}
+
+# Stand-alone sctest with boolean output
+IsThereABreak = function(..., scsig=0.05)
+{
+    SCp = MySctest(scsig=0.05, ...)
     message(paste("p-value is", SCp))
     SC = SCp > scsig
     if (is.null(SC) || is.na(SC)) return(NA)

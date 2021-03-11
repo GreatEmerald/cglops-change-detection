@@ -74,8 +74,30 @@ BreakConfusionStats = function(PredictionDates, TruthDates, threshold=0.5, perio
     # 4) True negatives:
     # The rest, given the total number of items we should have.
     # e.g. 4 - (sum of above)
-    TN = floor(max(period) - min(period) + 2*threshold) - sum(FP, FN, TP)
-    return(c(TP=TP, TN=TN, FP=FP, FN=FN))
+    MaxItems = floor(max(period) - min(period) )#+ 2*threshold)
+    TN = MaxItems - sum(FP, FN, TP)
+    # NOTE: TN is never reliable!
+    
+    # Check whether the output makes sense
+    Result = c(TP=TP, TN=TN, FP=FP, FN=FN)
+    if (any(Result < 0)) {
+        #warning(paste("Negative validation values:", toString(Result)))
+       
+        while (min(Result) < 0) {
+            # Just clamp to 0
+            MinStat = which.min(Result)
+            Result[MinStat] = Result[MinStat]+1
+            # Alternatively distribute the negativity over the most positive values
+            #MaxStat = which.max(Result)
+            #Result[MaxStat] = Result[MaxStat]-1
+        }
+        
+    }
+    #if (sum(Result) > MaxItems) {
+    #    stop(paste("More validation items than possible:", toString(Result)))
+    #}
+    
+    return(Result)
 }
 
 # 5) Get statistics from the prediction result.
@@ -87,20 +109,20 @@ FPStats = function(predictions, truth = NULL, round=3)
     {
         if ("bfast_guess" %in% names(predictions))
         {
-            predictions = predictions$bfast_guess
             if ("change_at_300m" %in% names(predictions)) {
                 truth = predictions$change_at_300m == "yes"
             } else if ("changed" %in% names(predictions)) {
                 truth = predictions$changed
             }
+            predictions = predictions$bfast_guess
         }
     }
     # New version with stats already in the DF
     if (all(c("TP", "TN", "FP", "TP") %in% names(predictions))) {
-        TruePositiveCount = sum(predictions$TP, na.rm=TRUE)
-        FalsePositiveCount = sum(predictions$FP, na.rm=TRUE)
-        TrueNegativeCount = sum(predictions$TN, na.rm=TRUE)
-        FalseNegativeCount = sum(predictions$FN, na.rm=TRUE)
+        TruePositiveCount = ifelse(all(is.na(predictions$TP)), NA, sum(predictions$TP, na.rm=TRUE))
+        FalsePositiveCount = ifelse(all(is.na(predictions$FP)), NA, sum(predictions$FP, na.rm=TRUE))
+        TrueNegativeCount = ifelse(all(is.na(predictions$TN)), NA, sum(predictions$TN, na.rm=TRUE))
+        FalseNegativeCount = ifelse(all(is.na(predictions$FN)), NA, sum(predictions$FN, na.rm=TRUE))
     } else {
         # We predicted a break and it was a break
         TruePositiveCount = sum(predictions & truth, na.rm=TRUE)

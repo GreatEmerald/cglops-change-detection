@@ -8,7 +8,7 @@ source("../src/bfast-cal/04-validation.r")
 #' @param threshold Let for considering whether the break was detected correctly or not.
 #' @param NewAccuracy Whether or not to use the new accuracy calculation method (4c)
 TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
-    DetectFunction=MODDetectBreaks, NewAccuracy=TRUE, ...)
+    DetectFunction=MODDetectBreaks, NewAccuracy=TRUE, verbose=FALSE, ...)
 {
     # Parse function name
     if (!is.function(DetectFunction) && is.character(DetectFunction))
@@ -31,8 +31,10 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
     for (i in unique(VITS$sample_id))
     {
         SampleMatrix = GetMatrixFromSF(VITS[VITS$sample_id == i,])
-        #print(paste("Processing sample", i))
-        BreakTimes = DetectFunction(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=TRUE)
+        if (verbose) {
+            print(paste("Processing sample", i))
+        }
+        BreakTimes = DetectFunction(GetTS(SampleMatrix[1,], frequency = freq), ..., quiet=!verbose)
         
         if (!quiet) {
             pbi = pbi + 1
@@ -43,6 +45,8 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
             next # Already set to NA
         if (NewAccuracy) {
             TruthDates = VITS[VITS$sample_id == i & VITS$change_at_300m == "yes",]$year_fraction
+            if (length(BreakTimes) == 1 && !BreakTimes)
+                BreakTimes = numeric(0)
             Stats = BreakConfusionStats(BreakTimes, TruthDates, threshold = threshold)
             for (Stat in c("TP", "TN", "FP", "FN"))
                 VITS[VITS$sample_id == i, ][[Stat]] = Stats[Stat]
@@ -55,6 +59,10 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
     }
     if (!quiet)
         close(pb)
+    
+    # For the new style of accuracy assessment, we don't need repeated years
+    if (NewAccuracy)
+        VITS = VITS[!duplicated(VITS$sample_id),]
     
     return(VITS)
 }
