@@ -1,5 +1,7 @@
 library(foreach)
 library(doParallel)
+library(pbapply)
+library(data.table)
 source("../src/bfast-cal/04-validation.r")
 
 #' 3c) Wrapper for running 3+4 in one.
@@ -8,7 +10,7 @@ source("../src/bfast-cal/04-validation.r")
 #' @param threshold Let for considering whether the break was detected correctly or not.
 #' @param NewAccuracy Whether or not to use the new accuracy calculation method (4c)
 TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
-    DetectFunction=MODDetectBreaks, NewAccuracy=TRUE, verbose=FALSE, ...)
+    DetectFunction=MODDetectBreaks, NewAccuracy=TRUE, verbose=FALSE, cl=NULL, ...)
 {
     # Parse function name
     if (!is.function(DetectFunction) && is.character(DetectFunction))
@@ -28,7 +30,9 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
         pb = txtProgressBar(pbi, length(unique(VITS$sample_id)), style = 3)
     }
     # Detect the breaks in a loop over unique points (don't want to run bfast multiple times)
-    for (i in unique(VITS$sample_id))
+    #for (i in unique(VITS$sample_id))
+    #{
+    ProcessSample = function(i)
     {
         SampleMatrix = GetMatrixFromSF(VITS[VITS$sample_id == i,])
         if (verbose) {
@@ -41,22 +45,30 @@ TestMODBreakpointDetection = function(VITS, threshold=1, freq=23, quiet=FALSE,
             setTxtProgressBar(pb, pbi)
         }
         
+        SampleChunk = VITS[VITS$sample_id == i, ]
+        
         if (length(BreakTimes) < 2 && is.na(BreakTimes))
-            next # Already set to NA
+            return(SampleChunk) # Already set to NA
         if (NewAccuracy) {
-            TruthDates = VITS[VITS$sample_id == i & VITS$change_at_300m == "yes",]$year_fraction
+            TruthDates = SampleChunk[SampleChunk$change_at_300m == "yes",]$year_fraction
             if (length(BreakTimes) == 1 && !BreakTimes)
                 BreakTimes = numeric(0)
             Stats = BreakConfusionStats(BreakTimes, TruthDates, threshold = threshold)
             for (Stat in c("TP", "TN", "FP", "FN"))
-                VITS[VITS$sample_id == i, ][[Stat]] = Stats[Stat]
+                SampleChunk[[Stat]] = Stats[Stat]
         } else {
             for (year in as.data.frame(VITS)[VITS$sample_id == i,"year_fraction"])
             {
-                VITS[VITS$sample_id == i & VITS$year_fraction == year, "bfast_guess"] = IsBreakInTargetYear(BreakTimes, year, threshold)
+                SampleChunk[SampleChunk$year_fraction == year, "bfast_guess"] = IsBreakInTargetYear(BreakTimes, year, threshold)
             }
         }
+        return(SampleChunk)
     }
+    #}
+    ProcessedDF = pblapply(unique(VITS$sample_id), ProcessSample, cl=cl)
+    #VITS = do.call(rbind, ProcessedDF)
+    VITS = as.data.frame(data.table::rbindlist(ProcessedDF))
+    
     if (!quiet)
         close(pb)
     
