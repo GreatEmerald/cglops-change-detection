@@ -1,0 +1,57 @@
+---
+title: "BFAST algorithm benchmark"
+author: "Dainius Masiliunas, Marius Appel"
+date: "17/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source("../src/bfast-cal/01-preprocess.r")
+source("../src/bfast-cal/02-detectbreaks.r")
+source("../src/bfast-cal/03-batchprocessing.r")
+source("../src/bfast-cal/perclass.r")
+source("../src/bfast-cal/utils.r")
+source("../src/utils/visualise_breakpoints.r")
+library(microbenchmark)
+```
+
+# Speed benchmark of BFAST vs Lite vs Monitor
+
+## Load data
+
+```{r loaddata}
+Dataset = st_read("../data/bfast0n-benchmark-points-pca.gpkg")
+DataMat = GetMatrix(Dataset)
+```
+
+## Run BFAST on a point to see how long it would take
+
+Setup data:
+```{r}
+DataPoint = GetTS(c(GetMatrix(Dataset[1,])))
+# for bfast(decomp="stl")
+DataPointNoNA = na.approx(DataPoint)
+# for bfastmonitor
+DataPointYearly = lapply(2017:2019+0.25, window, x=DataPoint, start=NULL)
+names(DataPointYearly) = 2016:2018
+bfm = function(year) bfastmonitor(DataPointYearly[[as.character(year)]], year, response~trend+harmon, 3)
+# for all except bfastmonitor
+h = ceiling(frequency(DataPoint))
+```
+
+Run on one point:
+
+```{r benchmark1}
+set_default_options()
+system.time(bfast(DataPoint, season = "harmonic", h = h)) # ~5.5s
+system.time(bfast(DataPointNoNA, season = "harmonic", h = h, decomp = "stl")) # ~5.5s
+system.time(bfast(DataPoint, season = "harmonic", h = h, max.iter=1)) # ~2.5s
+system.time(bfast0n(DataPoint, response~trend+harmon, h = h, order = 3)) # ~1.5s
+system.time(lapply(2016:2018, bfm)) # 0.05s
+set_fast_options()
+system.time(bfast(DataPoint, season = "harmonic", h = h)) # ~1.5s
+system.time(bfast(DataPointNoNA, season = "harmonic", h = h, decomp = "stl")) # ~1.5s
+system.time(bfast(DataPoint, season = "harmonic", h = h, max.iter=1)) # ~0.7s
+system.time(bfast0n(DataPoint, response~trend+harmon, h = h, order = 3)) # ~0.3s
+system.time(lapply(2016:2018, bfm)) # 0.02s
+```
