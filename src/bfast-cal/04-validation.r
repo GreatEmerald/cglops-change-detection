@@ -144,12 +144,14 @@ FPStats = function(predictions, truth = NULL, round=3)
     Accuracy = (TruePositiveCount + TrueNegativeCount) /
         sum(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount)
     F1Score = 2 * (Precision * Sensitivity)/ (Precision + Sensitivity)
+    Beta = abs(Precision - Sensitivity)
     return(data.frame(TruePositiveCount, FalsePositiveCount, TrueNegativeCount, FalseNegativeCount,
         Sensitivity=round(Sensitivity, round), Specificity=round(Specificity, round),
         Precision=round(Precision, round), F1Score=round(F1Score, round),
         FalsePositiveRate=round(FalsePositiveRate, round),
         PositiveProportion=round(PositiveProportion, round),
-        PositiveLikelihood=round(PositiveLikelihood, round), Accuracy=round(Accuracy, round)))
+        PositiveLikelihood=round(PositiveLikelihood, round), Accuracy=round(Accuracy, round),
+        Beta = round(Beta, round)))
 }
 
 #' Utility to run FPStats() on combined dataframes from TestParams()
