@@ -1,0 +1,459 @@
+---
+title: "BFAST Monitor global testing"
+author: "Dainius"
+date: '2020-03-31'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(DT)
+source("../src/bfast-cal/01-preprocess.r")
+source("../src/bfast-cal/02-detectbreaks.r")
+source("../src/bfast-cal/03-batchprocessing.r")
+source("../src/bfast-cal/perclass.r")
+source("../src/bfast-cal/utils.r")
+registerDoParallel(cores=4)
+```
+```{r load, cache=TRUE}
+GlobalData = LoadReferenceData("../data/Data_Global.csv")
+```
+
+```{r extractdata}
+GlobalTS = LoadVITS(GlobalData, "", "/data/cgl_lc_bfast/Modis_VIs_GLOBAL_UTM_FINAL/", "Global")
+```
+
+```{r, cache=TRUE}
+GlobalData = MergeAllYears(GlobalData, GlobalTS)
+CheckReferenceData(GlobalData)
+```
+
+```{r addchangetypes}
+GlobalData$continent = NULL
+names(GlobalData)[names(GlobalData)=="field_30"] = "continent"
+table(GlobalData$continent)
+GlobalData[GlobalData$dominant_lc=="wetland_hebaceous",]$dominant_lc = "wetland_herbaceous"
+GlobalData = AddChangeClassCol(GlobalData)
+GlobalData = AddChangeProcessCol(GlobalData)
+GlobalData = GlobalData[GlobalData$reference_year %in% 2016:2018,] # Discard any changes in 2015, reference does not track that
+```
+
+```{r}
+#(ExampleSample = sample(GlobalData[GlobalData$change_at_300m=="yes",]$sample_id, 1))
+#(ExampleSample = 1376980) # Highly seasonal case
+#(ExampleSample = 1375731) # Recent clearcut case, break correct
+#(ExampleSample = 1374787) # Older clearcut case, two breaks (which is according to the reference)
+#(ExampleSample = 1373925) # Regrowth, correctly detected clearcut but not end of regrowth
+#(ExampleSample = 1373488) # Regrowth, only one event in reference; two breaks detected
+#(ExampleSample = 1372732) # Regrowth, 2 breaks detected, 3 in reference
+ExampleTS = GlobalData[GlobalData$sample_id == ExampleSample,]
+SampleTS = GetMatrixFromSF(ExampleTS)[1,]
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE)
+```
+
+```{r}
+# Need a recent version of bfast to make sure the bug is fixed (season should be a factor and not a nubmer)
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend+season)
+```
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, order=2)
+```
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, order=1)
+```
+
+```{r trend-model}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, level=0.001, history="all")
+```
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, type="OLS-CUSUM")
+```
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, type="RE")
+```
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, type="ME")
+```
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend+season, history="all")
+```
+
+```{r default-test, eval=FALSE, include=FALSE}
+DefaultsResult = TestMODBreakpointDetection(GlobalData, DetectFunction=TestMODMonitor)
+```
+
+```{r specific-test, eval=FALSE, include=FALSE}
+DefaultsResult = TestMODBreakpointDetection(GlobalData, DetectFunction=TestMODMonitor, formula=response~trend, level=0.002, type="ME")
+```
+
+## Winning methods
+
+### Trend model
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response~trend, level=0.001, history="all")
+```
+
+### Seasonal model
+
+```{r}
+TestMODMonitor(GetMatrixFromSF(ExampleTS)[1,], plot=TRUE, formula=response ~ trend + season, level=0.001, history="all", sbins=4, h=0.5)
+```
+
+# Mass statistics
+
+```{r baseline-stat-comparison, cache=TRUE}
+ResultBaseline = TestParams(list(
+    list(DetectFunction="TestMODMonitor"),
+    list(DetectFunction="TestMODMonitor", order=2),
+    list(DetectFunction="TestMODMonitor", order=1),
+    list(DetectFunction="TestMODMonitor", formula=response~trend)
+    ), data=GlobalData)
+```
+```{r baseline-stats, cache=TRUE}
+BS = FPStatsPerParam(ResultBaseline)
+rm(ResultBaseline)
+```
+
+## With lower p-values
+
+```{r p001-comparison, cache=TRUE}
+ResultP001 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", level=0.01),
+    list(DetectFunction="TestMODMonitor", order=2, level=0.01),
+    list(DetectFunction="TestMODMonitor", order=1, level=0.01),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.01)
+    ), data=GlobalData)
+```
+```{r P001Stats, cache=TRUE}
+P001S = FPStatsPerParam(ResultP001)
+rm(ResultP001)
+gc()
+```
+
+## Separate ROC and sctest p-values
+
+```{r pmix-comparison1, cache=TRUE}
+ResultPMix1 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.01, 0.005)),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.005, 0.01))#,
+    #list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.01, 0.05)),
+    #list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.05, 0.01))
+    ), data=GlobalData)
+```
+```{r PMixStats1, cache=TRUE}
+PMixS1 = FPStatsPerParam(ResultPMix1)
+rm(ResultPMix1)
+```
+```{r pmix-comparison2, cache=TRUE}
+ResultPMix2 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.01, 0.05)),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.05, 0.01))
+    ), data=GlobalData)
+```
+```{r PMixStats2, cache=TRUE}
+PMixS2 = FPStatsPerParam(ResultPMix2)
+rm(ResultPMix2)
+```
+
+## Test seasonal dummies
+
+Adding season to trend (at 0.3 dummies) makes it more lax: higher sensitivity but lower specificity. At 0.7 and 1 it's just strictly worse. At 0.2 and lower it starts to become very similar to trend-only.
+
+```{r season-comparison, cache=TRUE}
+ResultSeason = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.3),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.7)
+    ), data=GlobalData)
+```
+```{r season-stats, cache=TRUE}
+SS = FPStatsPerParam(ResultSeason)
+rm(ResultSeason)
+```
+```{r season-comparison-p001, cache=TRUE}
+ResultSeasonP001 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.01),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.3, level=0.01),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.4, level=0.01)
+    ), data=GlobalData)
+```
+```{r season-stats-p001, cache=TRUE}
+SSP001 = FPStatsPerParam(ResultSeasonP001)
+rm(ResultSeasonP001)
+```
+```{r comparison-p0005, cache=TRUE}
+ResultP0005 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.005),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.005),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001)
+    ), data=GlobalData)
+```
+```{r season-stats-p0005, cache=TRUE}
+SP0005 = FPStatsPerParam(ResultP0005)
+rm(ResultP0005)
+```
+```{r comparison-p0001, cache=TRUE}
+ResultP0001 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.001),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.001, 0.0005))
+    ), data=GlobalData)
+```
+```{r season-stats-p0001, cache=TRUE}
+SP0001 = FPStatsPerParam(ResultP0001)
+rm(ResultP0001)
+```
+
+## Test other params: h
+
+As h is increases, the specificity is also increased, but the sensitivity plummets even more.
+```{r comparison-h, cache=TRUE}
+ResultH = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.3, level=0.001, h=0.5),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, h=0.5),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.001, h=0.5)
+    ), data=GlobalData)
+```
+```{r h-stats, cache=TRUE}
+SH = FPStatsPerParam(ResultH)
+rm(ResultH)
+```
+
+```{r comparison-h1, cache=TRUE}
+ResultH1 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.3, level=0.001, h=1),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, h=1),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.001, h=1)
+    ), data=GlobalData)
+```
+```{r h1-stats, cache=TRUE}
+SH1 = FPStatsPerParam(ResultH1)
+rm(ResultH1)
+```
+
+## Test other monitoring EFPs
+
+Does worse than the default; makes it more lax in order OLS-MOSUM < ME < OLS-CUSUM < RE. Since it's already too lax even at the tightest available level, then all the alternatives are not useful.
+
+```{r comparison-efp, cache=TRUE}
+ResultEfp = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.005, type="OLS-CUSUM"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.005, type="RE"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.005, type="ME")
+    ), data=GlobalData)
+```
+```{r efp-stats, cache=TRUE}
+SEfp = FPStatsPerParam(ResultEfp)
+rm(ResultEfp)
+```
+
+## Test history period estimation
+
+History set to all works outright better for trend. BP is very bad. Need to check what happens to season. Note: this means that the second `level` doesn't matter, so we can't optimise further.
+```{r comparison-history, cache=TRUE}
+ResultHistory = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, history="BP"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.3, h=1)
+    ), data=GlobalData)
+```
+```{r history-stats, cache=TRUE}
+SHist = FPStatsPerParam(ResultHistory)
+#rm(ResultHistory)
+```
+
+## Test history effect on seasonal models
+
+```{r comparison-history-season, cache=TRUE}
+ResultHistoryS = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.001, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+harmon, order=2, level=0.001, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.3, level=0.001, history="all")
+    ), data=GlobalData)
+```
+```{r history-season-stats, cache=TRUE}
+SHistS = FPStatsPerParam(ResultHistoryS)
+rm(ResultHistoryS)
+```
+
+## Test lags
+
+Outright worse.
+
+```{r comparison-lag, cache=TRUE}
+ResultLag = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, lag=1),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, slag=1),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, lag=1, slag=1)
+    ), data=GlobalData)
+```
+```{r lag-stats, cache=TRUE}
+SLag = FPStatsPerParam(ResultLag)
+rm(ResultLag)
+```
+
+## Guesses based on what we've seen so far
+
+If we keep decreasing the level, the results keep improving, so try to continue doing that and see if the trend continues.
+
+* It seems that setting history to all is the same as setting a level of 0, so it never gets better than that.
+
+Next, we have a bit of specificity left over for h 0.5, can we trade it for sensitivity? h increases the specificity, so decrease it with season and also lower level.
+
+* The sensitivy never gets as high as just with trend.
+
+```{r comparison-mix1, cache=TRUE}
+ResultM1 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=c(0.001, 0.0001)),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.005, h=0.5),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.4, level=0.005, h=0.5)
+    ), data=GlobalData)
+```
+```{r mix1-stats, cache=TRUE}
+SM1 = FPStatsPerParam(ResultM1)
+rm(ResultM1)
+```
+
+Can we do better than trend with all history?
+
+All history gives a big improvement, and our closest option was trend + season, sbins 0.2, level 0.001, h 0.5, set's see if the combination is better
+
+```{r comparison-mix2, cache=TRUE}
+ResultM2 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.2, level=0.005, h=0.5),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=0.4, level=0.005, h=0.5)
+    ), data=GlobalData)
+```
+```{r mix2-stats, cache=TRUE}
+SM2 = FPStatsPerParam(ResultM2)
+rm(ResultM2)
+```
+
+It is, but just barely not as good as trend. What if we optimise the bins?
+
+```{r comparison-mix3, cache=TRUE}
+ResultM3 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+harmon, order=2, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=4, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=6, level=0.001, h=0.5, history="all")
+    ), data=GlobalData)
+```
+```{r mix3-stats, cache=TRUE}
+SM3 = FPStatsPerParam(ResultM3)
+#rm(ResultM3)
+```
+
+```{r comparison-mix4, cache=TRUE}
+ResultM4 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+harmon, order=3, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=3, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=8, level=0.001, h=0.5, history="all")
+    ), data=GlobalData)
+```
+```{r mix4-stats, cache=TRUE}
+SM4 = FPStatsPerParam(ResultM4)
+rm(ResultM4)
+```
+
+```{r comparison-mix5, cache=TRUE}
+ResultM5 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+harmon, order=1, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=9, level=0.001, h=0.5, history="all")
+    ), data=GlobalData)
+```
+```{r mix5-stats, cache=TRUE}
+SM5 = FPStatsPerParam(ResultM5)
+rm(ResultM5)
+```
+
+```{r comparison-mix6, cache=TRUE}
+ResultM6 = TestParams(list(
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=6, level=0.001, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=7, level=0.001, h=0.5, history="all"),
+    list(DetectFunction="TestMODMonitor", formula=response~trend+season, sbins=5, level=0.001, h=0.5, history="all")
+    ), data=GlobalData)
+```
+```{r mix6-stats, cache=TRUE}
+SM6 = FPStatsPerParam(ResultM6)
+rm(ResultM6)
+```
+
+## Overall results
+
+Nothing does quite as well as the basic model of min fit (`response~trend`), min p-value (0.001) and all history (min p-value of ROC). The next best is seasonal dummies, higher h, still all history and 4 bins per year, which is much more conservative but misses a lot of change.
+
+```{r}
+datatable(rbind(BS, P001S, PMixS1, PMixS2, SS, SSP001, SP0005, SP0001, SH, SH1, SEfp, SHist, SLag, SM1, SHistS, SM2, SM3, SM4, SM5, SM6))
+gc()
+```
+
+# Conservative trend model breakdown
+
+```{r}
+ResultTrend = ResultHistory[ResultHistory$call=="DetectFunction TestMODMonitor, formula response ~ trend, level 0.001, history all",]
+rm(ResultHistory)
+```
+
+## Results per class
+
+```{r perclassstats-trend, cache=TRUE}
+PCT = FPStatsPerClass(ResultTrend, cl=2)
+```
+```{r}
+datatable(PCT)
+```
+
+## Results per change process
+
+```{r perprocess-stats-trend, cache=TRUE}
+PPT = FPStatsPerClass(ResultTrend, cl=2, column="changeprocess")
+```
+```{r}
+datatable(PPT)
+```
+
+## Results per continent
+
+```{r percontinent-stats-trend}
+datatable(FPStatsPerContinent(ResultTrend, cl=2))
+```
+
+# Ultraconservative season model breakdown
+
+```{r}
+ResultSeason = ResultM3[ResultM3$call=="DetectFunction TestMODMonitor, formula response ~ trend + season, sbins 4, level 0.001, h 0.5, history all",]
+rm(ResultM3)
+```
+
+## Results per class
+
+```{r perclassstats-season, cache=TRUE}
+PCS = FPStatsPerClass(ResultSeason, cl=2)
+```
+```{r}
+datatable(PCS)
+```
+
+## Results per change process
+
+```{r perprocess-stats-season, cache=TRUE}
+PPS = FPStatsPerClass(ResultSeason, cl=2, column="changeprocess")
+```
+```{r}
+datatable(PPS)
+```
+
+## Results per continent
+
+```{r percontinent-stats-season}
+datatable(FPStatsPerContinent(ResultSeason, cl=2))
+```
+

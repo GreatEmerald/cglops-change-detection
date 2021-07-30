@@ -4,18 +4,9 @@ library(strucchange)
 
 # Module only containing the bfast0n function
 
-EnableFastBfast = function()
-{
-    if (exists("set_fast_options"))
-    {
-        print("Using fast BFAST")
-        set_fast_options()
-        # Disable bfastts modifications due to issue #2
-        options(bfast.use_bfastts_modifications=FALSE)
-    } else print("Using reference BFAST, install appelmar/bfast for a speed increase")
-}
-
-BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, Order=3, t0 = as.Date("2014-01-01"), NoBreakValue = -9999, breaks="LWZ")
+BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, Order=1,
+                         t0 = as.Date("2014-01-01"), NoBreakValue = -9999, breaks="LWZ",
+                         formula = response~trend+season, seasonfreq = 0.3, scsig=0.01)
 {
     # Utility functions: here so that the scope is correct for SparkR
     GetBreakNumberWhole = function(bfts)
@@ -101,15 +92,23 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     
     bpp = bfastpp(bfts, order=Order)
     
-    testforabreak = sctest(efp(response ~ (harmon + trend), data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))
-    if (is.null(testforabreak) || is.null(testforabreak$p.value) || !is.finite(testforabreak$p.value)) {
-        cat("Warning: sctest did not return a valid value!\n")
-        print(str(testforabreak))
-        print(testforabreak)
-    } else if (testforabreak$p.value > 0.05) # If test says there should be no breaks
-        return(ReturnNoBreak())
+    # Add support for different bins for seasonal dummies
+    myseason = as.numeric(as.character(bpp$season)) # Deparse season again
+    if (!all(is.na(myseason))) # If we failed to deparse, then we're using a fixed bfastpp already, no need to do anything
+        bpp$season = cut(myseason, frequency(bfts)*seasonfreq, ordered_result = TRUE) # Rebin all
     
-    bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts), breaks=breaks),
+    if (is.finite(scsig))
+    {
+        testforabreak = sctest(efp(formula, data=bpp, h=GetBreakNumber(dates), type="OLS-MOSUM"))
+        if (is.null(testforabreak) || is.null(testforabreak$p.value) || !is.finite(testforabreak$p.value)) {
+            cat("Warning: sctest did not return a valid value!\n")
+            print(str(testforabreak))
+            print(testforabreak)
+        } else if (testforabreak$p.value > scsig) # If test says there should be no breaks
+            return(ReturnNoBreak())
+    }
+    
+    bf = tryCatch(breakpoints(formula, data=bpp, h=GetBreakNumberWhole(bfts), breaks=breaks),
                   error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", pixel, "\n")); return(NULL)})
     
     if (is.null(bf))
@@ -124,10 +123,12 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     
     # Make a matrix for the output
     OutMatrix = matrix(NoBreakValue, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
-    ConfInts = confint(bf, breaks=breaks)$confint # Get confidence interval
-    BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
+    # Get confidence interval
+    ConfInts = tryCatch(confint(bf, breaks=breaks)$confint,
+                        error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", pixel, "\n")); return(NA)})
+    BreakpointYears = as.integer(sapply(breakpoints(bf, breaks=breaks)$breakpoints, BreakpointDate, bpp)) # Get years at which breakpoints happened
     if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
-        cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp), "Breakpoints:", ConfInts[,"breakpoints"], "\n"))
+        cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(breakpoints(bf, breaks=breaks)$breakpoints, BreakpointDate, bpp), "Breakpoints:", breakpoints(bf, breaks=breaks)$breakpoints, "\n"))
     BreakpointDays = sapply(ConfInts, BreakpointToDateSinceT0, bpp, t0, DateOffset) # Convert indices to days since t0
     OutMatrix[as.character(BreakpointYears),] = BreakpointDays # Put it into our matrix in the right years
     return(c(t(OutMatrix))) # Flatten matrix

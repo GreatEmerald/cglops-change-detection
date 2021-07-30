@@ -6,14 +6,14 @@
 
 source("bfast-cal/functions.r")
 
-RawData = LoadReferenceData("../data/training_data_100m_20191205_V4_no_time_gaps_africa.csv")
+RawData = LoadReferenceDataAfrica("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv")
 ChangeIDs = as.data.frame(RawData)[RawData$change_at_300m == "yes","sample_id"]
 length(ChangeIDs) # 75: total number of (non-unique) change points
 length(unique(ChangeIDs)) # 62: unique change locations
 plot(RawData[RawData$change_at_300m == "yes","sample_id"]) # All Africa
 (nrow(RawData)-1) %% 4 == 0
 
-EVI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"))
+EVI_8d_16int = LoadVITS(LoadReferenceDataAfrica("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"))
 plot(GetMatrixFromSF(EVI_8d_16int)[1,]~GetDates8d(), type="l")
 
 EVI_8d_16int_full = MergeAllYears(EVI_8d_16int, RawData)
@@ -23,21 +23,21 @@ length(unique(ChangeIDs_UTM)) # 39: unique change locations
 length(unique(as.data.frame(EVI_8d_16int_full)[,"sample_id"])) # out of 1900
 plot(EVI_8d_16int_full[EVI_8d_16int_full$change_at_300m == "yes","sample_id"]) # UTM zones only
 
-NDMI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_8d_Int16")
+NDMI_8d_16int = LoadVITS(LoadReferenceDataAfrica("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_8d_Int16")
 NDMI_8d_16int_full = MergeAllYears(NDMI_8d_16int, RawData)
 plot(GetMatrixFromSF(NDMI_8d_16int)[1,]~GetDates8d(), type="l")
 
-NDMI_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_16d_Int16")
+NDMI_16d_16int = LoadVITS(LoadReferenceDataAfrica("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NDMI_16d_Int16")
 NDMI_16d_16int_full = MergeAllYears(NDMI_16d_16int, RawData)
 
-NIRv_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_8d_Int16")
+NIRv_8d_16int = LoadVITS(LoadReferenceDataAfrica("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_8d_Int16")
 NIRv_8d_16int_full = MergeAllYears(NIRv_8d_16int, RawData)
 plot(GetMatrixFromSF(NIRv_8d_16int)[1,]~GetDates8d(), type="l")
 
-NIRv_16d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Int16")
+NIRv_16d_16int = LoadVITS(LoadReferenceDataAfrica("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Int16")
 NIRv_16d_16int_full = MergeAllYears(NIRv_16d_16int, RawData)
 
-NIRv_16d_byte = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Byte")
+NIRv_16d_byte = LoadVITS(LoadReferenceDataAfrica("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"), "NIRv_16d_Byte")
 NIRv_16d_byte_full = MergeAllYears(NIRv_16d_byte, RawData)
 
 MODDetectBreaks(GetMatrixFromSF(EVI_8d_16int)[EVI_8d_16int$sample_id == unique(ChangeIDs_UTM)[1],], breaks="LWZ", plot=TRUE)

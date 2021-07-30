@@ -35,5 +35,12 @@ vignettes/*.pdf
 
 data/val*.csv
 data/Val*.csv
-data/training*.csv
+data/*training*.csv
 data/*.gpkg
+data/Data*.csv
+data/NIRv*.csv
+src/centroids/identify_centroids_LC100_grid.py
+*_files
+
+*.aux.xml
+*.Rds

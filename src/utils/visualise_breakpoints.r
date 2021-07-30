@@ -1,6 +1,6 @@
 library(strucchange)
 library(bfast)
-source("utils/getbreaknumber.r")
+source("../src/utils/getbreaknumber.r")
 
 MyPlotBfast = function(MyBF, PlotData=TRUE, ...)
 {
@@ -72,4 +72,28 @@ visualise_breakpoints = function(pixel, order=3, timestep="10-day", dates=NULL,
         bf = bfo$breakpoints
     }
     return(bf)
+}
+
+# Simply plot a time series, when given in the format of LoadVITS(), i.e. named vector,
+# or an sf object
+PlotTS = function(sfo, ylab="NIRv * 255", xlab="Year", main="MODIS time series", abline=NULL, savepdf=FALSE, ...)
+{
+    Location = if (inherits(sfo, "sf")) st_coordinates(sfo[1,]) else NULL
+    
+    NameVec = GetMatrixFromSF(sfo)[1,]
+    Dates=as.Date(names(NameVec), format="X%Y.%m.%d")
+    DatesFrac = decimal_date(Dates)
+    if (savepdf)
+        pdf(width=8, height=4)
+    plot(NameVec/255~DatesFrac,
+         type="l", ylab=ylab, xlab=xlab, main=main, axes=FALSE, ...)
+    axis(side=1, at=2009:2020)
+    axis(2)
+    box()
+    if (!is.null(abline))
+        abline(v=abline, col="red")
+    if (savepdf)
+        dev.off()
+    
+    print(Location)
 }

@@ -1,0 +1,318 @@
+---
+title: "BFAST0N comparison vs BFAST and BFASTMonitor"
+author: "Dainius Masiliūnas"
+date: "22/02/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(DT)
+library(future)
+plan("multicore")
+source("../src/bfast-cal/01-preprocess.r")
+source("../src/bfast-cal/02-detectbreaks.r")
+source("../src/bfast-cal/03-batchprocessing.r")
+source("../src/bfast-cal/perclass.r")
+source("../src/bfast-cal/utils.r")
+source("../src/utils/visualise_breakpoints.r")
+source("../src/utils/enable_fast_bfast.r")
+```
+```{r load, cache=TRUE}
+GlobalData = LoadReferenceData("../data/Data_Global.csv")
+```
+```{r extractdata}
+GlobalTS = LoadVITS(GlobalData, "", "/data/cgl_lc_bfast/Modis_VIs_GLOBAL_UTM_FINAL/", "Global")
+```
+```{r mergedata, cache=TRUE}
+GlobalData = MergeAllYears(GlobalData, GlobalTS)
+CheckReferenceData(GlobalData)
+```
+```{r addchangetypes}
+GlobalData$continent = NULL
+names(GlobalData)[names(GlobalData)=="field_30"] = "continent"
+table(GlobalData$continent)
+GlobalData[GlobalData$dominant_lc=="wetland_hebaceous",]$dominant_lc = "wetland_herbaceous"
+GlobalData = AddChangeClassCol(GlobalData)
+GlobalData = AddChangeProcessCol(GlobalData)
+GlobalData = GlobalData[GlobalData$reference_year %in% 2016:2018,] # Discard any changes in 2015, reference does not track that
+```
+
+```{r selectchange}
+ChangeData = GlobalData[GlobalData$sample_id %in% GlobalData[GlobalData$change_at_300m == "yes",]$sample_id,]
+```
+
+```{r}
+table(GlobalData$changeprocess)
+sort(table(GlobalData$changeclass), decreasing = TRUE)
+```
+
+# Overall statistics
+
+Number of unique locations:
+```{r}
+length(unique(GlobalData$sample_id))
+length(unique(GlobalData$location_id))
+nrow(GlobalData) / 3
+```
+
+Number of instances of change:
+
+```{r}
+sum(GlobalData$change_at_300m == "yes")
+sum(!is.na(GlobalData$changeclass))
+```
+
+Number of unique locations with change:
+
+```{r}
+length(unique(GlobalData[GlobalData$change_at_300m == "yes",]$sample_id))
+```
+
+Number of observations at locations with change:
+
+```{r}
+nrow(ChangeData)
+```
+
+Change to no change ratio:
+
+```{r}
+sum(ChangeData$change_at_300m == "yes") / nrow(ChangeData)
+```
+
+# Narrowing points down further
+
+Test all points with a strucchange test and discard those with no break in the time series altogether (NB: the break can be outside our scope of 2016-2018!)
+
+Example for one point:
+
+```{r getonebreak}
+SampleTS = sample(1:nrow(ChangeData), 1)
+PlotTS(ChangeData[SampleTS,])
+IsThereABreak(ChangeData[SampleTS,])
+IsThereABreak(ChangeData[SampleTS,], formula=response~trend)
+IsThereABreak(ChangeData[SampleTS,], formula=response~harmon)
+```
+
+Run for all points and see how many remain (using defaults):
+
+```{r breakexists, cache=TRUE}
+suppressMessages({BreakInBoth = apply(ChangeData[!duplicated(ChangeData$sample_id),], 1, IsThereABreak)})
+suppressMessages({BreakInTrend = apply(ChangeData[!duplicated(ChangeData$sample_id),], 1, IsThereABreak, formula=response~trend)})
+suppressMessages({BreakInSeasonality = apply(ChangeData[!duplicated(ChangeData$sample_id),], 1, IsThereABreak, formula=response~harmon)})
+BreakInBoth[is.na(BreakInBoth)] = FALSE
+BreakInTrend[is.na(BreakInTrend)] = FALSE
+BreakInSeasonality[is.na(BreakInSeasonality)] = FALSE
+BreakInAll = BreakInBoth & BreakInTrend & BreakInSeasonality
+sum(BreakInAll, na.rm = TRUE)
+```
+
+How accurate is the sctest? Let's see a few examples:
+
+```{r}
+BreakIDs = unique(ChangeData$sample_id[BreakInAll])
+BreakExamples = sample(BreakIDs, 20)
+for (i in 1:20)
+    PlotTS(ChangeData[ChangeData$sample_id == BreakExamples[i],])
+```
+
+Save the smaller dataset to file so that we can go back to it later.
+
+```{r}
+BreakData = ChangeData[ChangeData$sample_id %in% BreakIDs,]
+st_write(BreakData, "../data/bfast0n-comparison-points-likebfast.gpkg", delete_dsn = TRUE)
+```
+
+## Test with filtering based on targetted sctest with both compotents and high confidence
+
+```{r targetbreak, cache=TRUE}
+suppressMessages({TargettedBreakPvals = apply(ChangeData[!duplicated(ChangeData$sample_id),], 1, MySctest, scsig=0.001, scrange=c(2015, 2020))})
+TargettedBreakDF = data.frame(sample_id = unique(ChangeData$sample_id), pval = TargettedBreakPvals)
+
+TargettedBreakDF = TargettedBreakDF[order(TargettedBreakDF$pval),]
+
+BreakIDs = head(TargettedBreakDF, 1000)
+print(tail(BreakIDs, 1))
+BreakIDs = BreakIDs$sample_id
+```
+
+```{r}
+BreakExamples = sample(BreakIDs, 20)
+for (i in 1:20)
+    PlotTS(ChangeData[ChangeData$sample_id == BreakExamples[i],])
+```
+
+```{r}
+TargetData = ChangeData[ChangeData$sample_id %in% BreakIDs,]
+st_write(TargetData, "../data/bfast0n-comparison-points-targetted.gpkg", delete_dsn = TRUE)
+```
+
+Select also 1000 no change points:
+
+```{r targetnobreak, cache=TRUE}
+NoChangeData = GlobalData[!GlobalData$sample_id %in% GlobalData[GlobalData$change_at_300m == "yes",]$sample_id,]
+suppressMessages({TargettedNoBreakPvals = apply(NoChangeData[!duplicated(NoChangeData$sample_id),], 1, MySctest, scsig=0.001, scrange=c(2015, 2020))})
+TargettedNoBreakDF = data.frame(sample_id = unique(NoChangeData$sample_id), pval = TargettedNoBreakPvals)
+
+TargettedNoBreakDF = TargettedNoBreakDF[order(TargettedNoBreakDF$pval, decreasing=TRUE),]
+
+# Remove points that are marked as changed in reference data
+NoBreakIDs = head(TargettedNoBreakDF, 1000)
+print(tail(NoBreakIDs, 1))
+NoBreakIDs = NoBreakIDs$sample_id
+```
+
+```{r}
+# Were any of the selected points marked as change?
+any(NoChangeData[NoChangeData$sample_id %in% NoBreakIDs, ]$change_at_300m == "yes")
+BreakExamples = sample(NoBreakIDs, 20)
+for (i in 1:20)
+    PlotTS(GlobalData[GlobalData$sample_id == BreakExamples[i],])
+```
+Save both sets:
+```{r}
+TargetChangeData = ChangeData[ChangeData$sample_id %in% BreakIDs,]
+TargetNoChangeData = NoChangeData[NoChangeData$sample_id %in% NoBreakIDs, ]
+TargetData = rbind(TargetChangeData, TargetNoChangeData)
+st_write(TargetData, "../data/bfast0n-comparison-points-targetted-balanced.gpkg", delete_dsn = TRUE)
+```
+
+```{r}
+rm(GlobalData, ChangeData, NoChangeData, BreakData, TargetChangeData, TargetNoChangeData, TargettedBreakDF, TargettedNoBreakDF, GlobalTS)
+gc()
+```
+
+# Run change detection on each unique location
+
+```{r, include=FALSE, eval=FALSE}
+bf0nres.oa = TestMODBreakpointDetection(TargetData[(nrow(TargetData)-9):nrow(TargetData),], scrange=NULL, breaks="BIC", plot=TRUE, NewAccuracy = FALSE)
+bfmres.oa = TestMODBreakpointDetection(TargetData[(nrow(TargetData)-9):nrow(TargetData),], DetectFunction = TestMODMonitor, plot=TRUE, NewAccuracy = FALSE)
+```
+
+```{r bf0nres, cache=TRUE, warning=FALSE, error=FALSE, include=FALSE, eval=FALSE}
+bf0nres = TestMODBreakpointDetection(BreakData, scrange=NULL, breaks="BIC", NewAccuracy = TRUE, threshold = 0.5, order=3, quiet = TRUE)
+```
+```{r bfmres, cache=TRUE, include=FALSE, eval=FALSE}
+bfmres = TestMODBreakpointDetection(BreakData, DetectFunction = TestMODMonitor, NewAccuracy = TRUE, threshold = 0.5, order=3, quiet=TRUE)
+```
+```{r bfres, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide", include=FALSE, eval=FALSE}
+bfres = TestMODBreakpointDetection(BreakData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.5, order=3, season="harmonic", quiet = TRUE)
+```
+
+```{r bfresInterp, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide", include=FALSE, eval=FALSE}
+bfresInterp = TestMODBreakpointDetection(BreakData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.5, order=3, season="harmonic", stlplus=FALSE, quiet=TRUE)
+```
+
+One iteration:
+```{r bfres1, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide", include=FALSE, eval=FALSE}
+bfres1 = TestMODBreakpointDetection(BreakData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.5, order=3, season="harmonic", quiet = TRUE, max.iter=1)
+```
+
+```{r bfresInterp1, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide", include=FALSE, eval=FALSE}
+bfresInterp1 = TestMODBreakpointDetection(BreakData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.5, order=3, season="harmonic", stlplus=FALSE, quiet=TRUE, max.iter=1)
+```
+
+## Test on targetted and balanced breaks
+
+Low tolerance to see whether bfastMonitor is really that good
+
+```{r bf0ntarget, cache=TRUE, warning=FALSE, error=FALSE}
+bf0ntarget = TestMODBreakpointDetection(TargetData, scrange=NULL, breaks="BIC", NewAccuracy = TRUE, threshold = 0.25, order=3, quiet = TRUE)
+```
+```{r bfmtarget, cache=TRUE}
+bfmtarget = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODMonitor, NewAccuracy = TRUE, threshold = 0.25, order=3, quiet=TRUE)
+```
+```{r bftarget, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide"}
+bftarget = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.25, order=3, season="harmonic", quiet = TRUE)
+
+```
+
+```{r bftargetInterp, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide"}
+bftargetInterp = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.25, order=3, season="harmonic", stlplus=FALSE, quiet=TRUE)
+```
+
+One iteration didn't do much difference
+```{r bftarget1, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide", include=FALSE, eval=FALSE}
+bftarget1 = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.25, order=3, season="harmonic", quiet = TRUE, max.iter=1)
+```
+
+```{r bftargetInterp1, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide", include=FALSE, eval=FALSE}
+bftargetInterp1 = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 0.25, order=3, season="harmonic", stlplus=FALSE, quiet=TRUE, max.iter=1)
+```
+
+## Retry with tolerance=1
+
+It seems that running with max.iter=1 is not very useful, and which points we test on doesn't make a huge difference either, so stick with base
+
+```{r bf0nres1y, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1y = TestMODBreakpointDetection(TargetData, scrange=NULL, breaks="BIC", NewAccuracy = TRUE, threshold = 1, order=3, quiet = TRUE)
+```
+```{r bfmres1y, cache=TRUE}
+bfmres1y = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODMonitor, NewAccuracy = TRUE, threshold = 1, order=3, quiet=TRUE)
+```
+```{r bfres1y, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide"}
+bfres1y = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 1, order=3, season="harmonic", quiet = TRUE)
+
+```
+
+```{r bfresInterp1y, cache=TRUE, warning=FALSE, error=FALSE}
+bfresInterp1y = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 1, order=3, season="harmonic", stlplus=FALSE, quiet=TRUE)
+```
+
+BFAST Lite with LWZ:
+
+```{r bf0nres1ylwz, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1ylwz = TestMODBreakpointDetection(TargetData, scrange=NULL, breaks="LWZ", NewAccuracy = TRUE, threshold = 1, order=3, quiet = TRUE)
+```
+
+## Rerun with yearly statistics
+
+The results are surprising; is it because we are missing the middle, or is it because of the new accuracy method? Try again with the old method.
+
+```{r bf0nres1yoa, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1y.oa = TestMODBreakpointDetection(TargetData, scrange=NULL, breaks="BIC", NewAccuracy = FALSE, threshold = 1, order=3, quiet = TRUE)
+```
+```{r bfmres1yoa, cache=TRUE}
+bfmres1y.oa = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODMonitor, NewAccuracy = FALSE, threshold = 1, order=3, quiet=TRUE)
+```
+```{r bfres1yoa, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide"}
+bfres1y.oa = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = FALSE, threshold = 1, order=3, season="harmonic", quiet = TRUE)
+```
+
+```{r bfresInterp1yoa, cache=TRUE, warning=FALSE, error=FALSE}
+bfresInterp1y.oa = TestMODBreakpointDetection(TargetData, DetectFunction = TestMODBFAST, NewAccuracy = FALSE, threshold = 1, order=3, season="harmonic", stlplus=FALSE, quiet=TRUE)
+```
+
+```{r bf0nres1ylwzoa, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1ylwz.oa = TestMODBreakpointDetection(TargetData, scrange=NULL, breaks="LWZ", NewAccuracy = FALSE, threshold = 1, order=3, quiet = TRUE)
+```
+
+
+## Accuracy comparison
+
+```{r}
+datatable(rbind(
+    #bf0n = FPStats(bf0nres),
+    #bfm = FPStats(bfmres),
+    #bfstlp=FPStats(bfres),
+    #bfinterp=FPStats(bfresInterp),
+    #bfstlp1=FPStats(bfres1),
+    #bfinterp1=FPStats(bfresInterp1),
+    bf0n.025y = FPStats(bf0ntarget),
+    bfm.025y = FPStats(bfmtarget),
+    bfstlp.025y=FPStats(bftarget),
+    bfinterp.025y=FPStats(bftargetInterp),
+    #bfstlp1.t=FPStats(bftarget1),
+    #bfinterp1.t=FPStats(bftargetInterp1),
+    bf0n.1y = FPStats(bf0nres1y),
+    bfm.1y = FPStats(bfmres1y),
+    bfstlp.1y=FPStats(bfres1y),
+    bfinterp.1y=FPStats(bfresInterp1y),
+    bf0n.1y.lwz=FPStats(bf0nres1ylwz),
+    bf0n.1y.oa = FPStats(bf0nres1y.oa),
+    bfm.1y.oa = FPStats(bfmres1y.oa),
+    bfstlp.1y.oa=FPStats(bfres1y.oa),
+    bfinterp.1y.oa=FPStats(bfresInterp1y.oa),
+    bf0n.1y.lwz.oa=FPStats(bf0nres1ylwz.oa)
+    ))
+```

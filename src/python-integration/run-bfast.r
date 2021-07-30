@@ -1,8 +1,14 @@
 # File for running bfast0n on a datacube provided by rpy2
+# Dependencies:
+# devtools::install_github("bfast2/strucchange@devel")
+# devtools::install_github("bfast2/bfast@dev")
 
 library(pbapply)
 
 suppressWarnings(source("bfast0n.r"))
+suppressWarnings(source("bfastmon.r"))
+
+source("fast-bfast.r")
 EnableFastBfast()
 
 # rpy2 will put an object called "DataCube" into the environment
@@ -16,17 +22,24 @@ EnableFastBfast()
 # The result doesn't make sense for R (run aperm() on it to make it have sense)
 # but it does make sense in Python.
 # Using pbapply, so you get a progress bar by default. Disable it with pboptions(type="none")
-runBFAST0N = function(DataCube, ..., MissingValue=NA)
+runBFAST = function(DataCube, BFFunction=BFAST0NBreaks, ..., MissingValue=NA)
 {
     # Replace all the missing values with NA
     if (!is.na(MissingValue))
         DataCube[DataCube == MissingValue] = NA
     
-    BFAST0N_result = pbapply(DataCube, c(1,2), BFAST0NBreaks, ...)
+    BFAST_result = pbapply(DataCube, c(1,2), BFFunction, ...)
     
     # Replace all the NAs with the missing value
     if (!is.na(MissingValue))
-        BFAST0N_result[is.na(BFAST0N_result)] = MissingValue
+        BFAST_result[is.na(BFAST_result)] = MissingValue
     
-    return(BFAST0N_result)
+    return(BFAST_result)
 }
+
+# For max sensitivity BFAST0N, use runBFAST(DataCube, BFFunction=BFAST0NBreaks, breaks="BIC", scsig=NA)
+
+# To run BFAST Monitor with trend (conservative) model:
+# runBFAST(DataCube, BFFunction=BFMBreaks)
+# With the seasonal (ultraconservative) model, devtools::install_github("bfast2/bfast@dev") and then:
+# runBFAST(DataCube, BFFunction=BFMBreaks, formula=response~trend+season, sbins=4)

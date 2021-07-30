@@ -1,0 +1,213 @@
+---
+title: "BFAST family change detection statistics visualisation"
+author: "Dainius Masiliūnas"
+date: "11/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(DT)
+library(pbapply)
+library(ggplot2)
+source("../src/bfast-cal/01-preprocess.r")
+source("../src/bfast-cal/02-detectbreaks.r")
+source("../src/bfast-cal/03-batchprocessing.r")
+source("../src/bfast-cal/perclass.r")
+source("../src/bfast-cal/utils.r")
+source("../src/utils/visualise_breakpoints.r")
+source("../src/utils/enable_fast_bfast.r")
+```
+```{r load, cache=TRUE}
+GlobalData = LoadReferenceData("../data/Data_Global.csv")
+```
+```{r extractdata}
+GlobalTS = LoadVITS(GlobalData, "", "/data/cgl_lc_bfast/Modis_VIs_GLOBAL_UTM_FINAL/", "Global")
+```
+```{r mergedata, cache=TRUE}
+GlobalData = MergeAllYears(GlobalData, GlobalTS)
+CheckReferenceData(GlobalData)
+```
+```{r addchangetypes}
+GlobalData$continent = NULL
+names(GlobalData)[names(GlobalData)=="field_30"] = "continent"
+table(GlobalData$continent)
+GlobalData[GlobalData$dominant_lc=="wetland_hebaceous",]$dominant_lc = "wetland_herbaceous"
+GlobalData = AddChangeClassCol(GlobalData)
+GlobalData = AddChangeProcessCol(GlobalData)
+GlobalData = GlobalData[GlobalData$reference_year %in% 2016:2018,] # Discard any changes in 2015, reference does not track that
+```
+
+# Algorithm comparison per break certainty
+
+Making an APU-like plot for how well each algorithm does at a given sctest p-value. Binned.
+
+Which bins to use? First get all the p-values:
+
+```{r sctest, cache=TRUE}
+suppressMessages({BreakPvals = pbapply(GlobalData[!duplicated(GlobalData$sample_id),], 1, MySctest, scrange=c(2015, 2020))})
+BreakDF = data.frame(sample_id = unique(GlobalData$sample_id), pval = BreakPvals)
+GlobalData = merge(GlobalData, BreakDF, by="sample_id")
+rm(BreakDF, BreakPvals, GlobalTS)
+```
+
+```{r}
+hist(GlobalData$pval)
+```
+
+Log-normal, so transform
+
+```{r}
+hist(log(GlobalData$pval))
+```
+
+Maybe it's a bit too much, try square root
+
+```{r}
+hist(sqrt(GlobalData$pval))
+```
+
+Now we are almost uniform; this gives us the most observations in the smallest bin:
+
+```{r}
+min(hist(sqrt(GlobalData$pval), plot=FALSE)$counts)/3
+# Number of intervals:
+length(hist(sqrt(GlobalData$pval), plot=FALSE)$breaks)
+```
+
+Prepare for plotting the results:
+
+```{r apuplot}
+cbrt_trans = scales::trans_new("cbrt", function(x) x^(1/3), function(x) x^3, domain = c(0, Inf))
+pow4_trans = scales::trans_new("pow4", function(x) x^(1/4), function(x) x^4, domain = c(0, Inf))
+
+# Input is list of resulting data.frames to compare, names are used for facets when plotting
+APUPlot = function(dflist, changeonly=FALSE, nbins=33, filename=NULL)
+{
+    GetASTable = function(MethodDF)
+    {
+        if (changeonly)
+            MethodDF = MethodDF[MethodDF$TP > 0.1 | MethodDF$FN > 0.1,]
+        
+        # Each method uses the same pval, so can take any
+        # Cut into 33 equal groups: ~1000 points per group
+        pbin = cut_number(MethodDF$pval, nbins)
+        ints = gsub("\\[|\\]|\\(", "", levels(pbin), perl=TRUE) # Interval labels
+        PredBins = seq(0, 1, 0.04)^2 # sqrt backtransform
+        # Get means of each interval for ggplot positioning purposes
+        BinTable = do.call(rbind, lapply(strsplit(ints, ","), as.numeric))
+        BinMeans = rowMeans(BinTable)
+        levels(pbin) = as.character(BinMeans)
+        
+        BinAS = t(sapply(levels(pbin), function(Bin) {
+            ValidationBin = MethodDF[pbin == Bin,]
+            AS = FPStats(ValidationBin)
+            return(c(unlist(AS), obsabs=nrow(ValidationBin), bin=as.numeric(Bin)))
+        }))
+        BinAS = data.frame(BinAS)
+        return(BinAS)
+    }
+    BinAS = lapply(dflist, GetASTable)
+    # Add method names to data.frames
+    methodnames = names(BinAS)
+    for (method in methodnames)
+        BinAS[[method]]$method = method
+    BinAS = do.call("rbind", BinAS)
+    
+    # Plot results
+    result = ggplot(BinAS, aes(x=bin, y=Accuracy)) + geom_line(aes(colour="Overall accuracy")) + geom_line(aes(y=F1Score, colour="F1 score")) + geom_line(aes(y=Sensitivity, colour="Sensitivity")) + geom_line(aes(y=Precision, colour="Precision")) + geom_line(aes(y=Specificity, colour="Specificity")) + geom_line(aes(y=Beta, colour="Beta")) +
+        #geom_col(aes(y=obs/scaleval, fill="Density"), alpha=0, colour="black") +
+        #scale_y_continuous(sec.axis = sec_axis(~.*scaleval, name = "Probability density (%)")) +
+        #labs(x="Predicted fraction (%)", y="Statistic (%)") +
+        #scale_colour_discrete(name = 'Statistic', breaks=c("RMSE", "MAE", "ME")) + scale_fill_manual(name = 'Histogram', values=c("Density"="white")) +
+        scale_x_continuous(name="Probability of no break", breaks=c(0, 0.001, 0.01, 0.05, 0.25, 1), trans = pow4_trans, limits = c(0,1)) +
+        ylab("Statistic") + scale_colour_discrete(name = "Statistic") +
+        facet_wrap(vars(method))
+    if (!is.null(filename))
+        ggsave(filename, result, width = 8)
+    result
+}
+```
+
+## Run BFAST on each point
+
+BFAST Monitor with defaults
+
+```{r bfmres1y, cache=TRUE}
+bfmres1y = TestMODBreakpointDetection(GlobalData, DetectFunction = TestMODMonitor, NewAccuracy = TRUE, threshold = 1, order=3, quiet=TRUE, cl=2)
+```
+
+```{r}
+bfmres1y = bfmres1y[, c("sample_id", "pval", "FP", "TP", "FN", "TN")] # conserve RAM
+```
+```{r runapuplot1}
+APUPlot(list(BFMonitor=bfmres1y))
+```
+
+BFAST Lite with BIC
+```{r bf0nres1y, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1y = TestMODBreakpointDetection(GlobalData, scrange=NULL, breaks="BIC", NewAccuracy = TRUE, threshold = 1, order=3, quiet = TRUE, cl=2)
+```
+
+```{r}
+bf0nres1y = bf0nres1y[, c("sample_id", "pval", "FP", "TP", "FN", "TN")] # conserve RAM
+```
+```{r runapuplot2}
+APUPlot(list(BFMonitor=bfmres1y, BFLiteBIC=bf0nres1y))
+```
+
+BFAST Lite with LWZ
+```{r bf0nres1ylwz, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1ylwz = TestMODBreakpointDetection(GlobalData, scrange=NULL, breaks="LWZ", NewAccuracy = TRUE, threshold = 1, order=3, quiet = TRUE, cl=2)
+```
+
+```{r}
+bf0nres1ylwz = bf0nres1ylwz[, c("sample_id", "pval", "FP", "TP", "FN", "TN")] # conserve RAM
+```
+```{r runapuplot3}
+APUPlot(list(BFMonitor=bfmres1y, BFLiteBIC=bf0nres1y, BFLiteLWZ=bf0nres1ylwz))
+```
+
+BFAST, with multiple iterations
+```{r bfres1y, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide"}
+bfres1y = TestMODBreakpointDetection(GlobalData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 1, order=3, season="harmonic", quiet = TRUE, cl=2)
+```
+
+```{r}
+bfres1y = bfres1y[, c("sample_id", "pval", "FP", "TP", "FN", "TN")] # conserve RAM
+```
+```{r runapuplot4}
+APUPlot(list(`BFAST Lite (BIC)`=bf0nres1y, `BFAST Lite (LWZ)`=bf0nres1ylwz, `BFAST (stlplus)`=bfres1y, `BFAST Monitor`=bfmres1y), filename="bfast-comparison-all.pdf")
+```
+
+```{r runapuplot4change}
+APUPlot(list(`BFAST Lite (BIC)`=bf0nres1y, `BFAST Lite (LWZ)`=bf0nres1ylwz, `BFAST (stlplus)`=bfres1y, `BFAST Monitor`=bfmres1y), changeonly=TRUE, nbins=11, filename="bfast-comparison-change.pdf") # ~300 points per bin
+```
+
+Try also BFAST Lite with order 2 and BFAST with interpolation
+
+```{r bfresInterp1y, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE, results="hide"}
+bfresInterp1y = TestMODBreakpointDetection(GlobalData, DetectFunction = TestMODBFAST, NewAccuracy = TRUE, threshold = 1, stlplus=FALSE, season="harmonic", quiet = TRUE, cl=2)
+```
+```{r}
+bfresInterp1y = bfresInterp1y[, c("sample_id", "pval", "FP", "TP", "FN", "TN")] # conserve RAM
+```
+
+```{r bf0nres1yo2, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1yo2 = TestMODBreakpointDetection(GlobalData, scrange=NULL, breaks="BIC", NewAccuracy = TRUE, threshold = 1, order=2, quiet = TRUE, cl=2)
+```
+```{r}
+bf0nres1yo2 = bf0nres1yo2[, c("sample_id", "pval", "FP", "TP", "FN", "TN")] # conserve RAM
+```
+
+```{r bf0nres1ylwzo2, cache=TRUE, warning=FALSE, error=FALSE}
+bf0nres1ylwzo2 = TestMODBreakpointDetection(GlobalData, scrange=NULL, breaks="LWZ", NewAccuracy = TRUE, threshold = 1, order=2, quiet = TRUE, cl=2)
+```
+```{r}
+bf0nres1ylwzo2 = bf0nres1ylwzo2[, c("sample_id", "pval", "FP", "TP", "FN", "TN")] # conserve RAM
+```
+
+```{r runapuplot5}
+APUPlot(list(BFMonitor=bfmres1y, BFLiteBIC=bf0nres1y, BFLiteLWZ=bf0nres1ylwz, BFASTstlplus=bfres1y, BFAST=bfresInterp1y, BFLiteBICorder2=bf0nres1yo2, BFLiteLWZorder2=bf0nres1ylwzo2))
+```
+```{r runapuplot5change}
+APUPlot(list(BFMonitor=bfmres1y, BFLiteBIC=bf0nres1y, BFLiteLWZ=bf0nres1ylwz, BFASTstlplus=bfres1y, BFAST=bfresInterp1y, BFLiteBICorder2=bf0nres1yo2, BFLiteLWZorder2=bf0nres1ylwzo2), changeonly=TRUE, nbins=11) # ~300 points per bin
