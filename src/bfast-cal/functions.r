@@ -19,14 +19,14 @@ LoadReferenceData = function(path="../data/ValidationPoints-AfricaPriority.csv")
     # Normally if we have a good CSV, we just do this.
     #Data = st_read(path, options=c("X_POSSIBLE_NAMES=x", "Y_POSSIBLE_NAMES=y"))
     # Now our centroids are in another file, so we need to do more.
-    DataBadCoords = read.csv(path)
-    CentroidData = read.csv("../data/2019_11_06_training_data_100m.csv")
-    Data = merge(DataBadCoords, CentroidData, by.x="sample_id", by.y="sampleid")
+    Data = read.csv(path)
+    #CentroidData = read.csv("../data/2019_11_06_training_data_100m.csv")
+    #Data = merge(DataBadCoords, CentroidData, by.x="sample_id", by.y="sampleid")
     Data = st_as_sf(Data, coords = c("centroid_x", "centroid_y"), dim="XY")
     Data = Data[!is.na(Data$change_at_300m),] # Remove NAs
     
     # Which columns are numeric
-    NumCols = c("rowid", "location_id", "sample_id", "bare", "burnt", "crops",
+    NumCols = c("location_id", "sample_id", "bare", "burnt", "crops",
                 "fallow_shifting_cultivation", "grassland", "lichen_and_moss", "shrub",
                 "snow_and_ice", "tree", "urban_built_up", "water", "wetland_herbaceous",
                 "not_sure", "reference_year")

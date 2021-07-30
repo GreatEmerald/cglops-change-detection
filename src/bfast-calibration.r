@@ -6,11 +6,12 @@
 
 source("bfast-cal/functions.r")
 
-RawData = LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv")
+RawData = LoadReferenceData("../data/training_data_100m_20191205_V4_no_time_gaps_africa.csv")
 ChangeIDs = as.data.frame(RawData)[RawData$change_at_300m == "yes","sample_id"]
 length(ChangeIDs) # 75: total number of (non-unique) change points
 length(unique(ChangeIDs)) # 62: unique change locations
 plot(RawData[RawData$change_at_300m == "yes","sample_id"]) # All Africa
+(nrow(RawData)-1) %% 4 == 0
 
 EVI_8d_16int = LoadVITS(LoadReferenceData("../data/training_data_100m_20191105_V4_no_time_gaps_africa_subset.csv"))
 plot(GetMatrixFromSF(EVI_8d_16int)[1,]~GetDates8d(), type="l")
